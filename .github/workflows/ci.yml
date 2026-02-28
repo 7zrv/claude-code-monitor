@@ -33,6 +33,12 @@ jobs:
       - name: Rust test
         run: cargo test
 
+      - name: Install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin
+
+      - name: Test coverage (min 80%)
+        run: cargo tarpaulin --fail-under 80
+
       - name: Rust build
         run: cargo build
 
