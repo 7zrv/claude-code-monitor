@@ -901,9 +901,11 @@ fn spawn_claude_collector(app: App, claude_home: PathBuf, poll_ms: u64, backfill
     thread::spawn(move || {
         let history = claude_home.join("history.jsonl");
         let projects_dir = claude_home.join("projects");
+        let stats_cache = claude_home.join("stats-cache.json");
 
         let mut history_cursor = (0_u64, String::new());
         let mut session_cursors: HashMap<PathBuf, (u64, String)> = HashMap::new();
+        let mut stats_cache_mtime: Option<SystemTime> = None;
 
         // initial backfill from history.jsonl
         if let Ok(contents) = std::fs::read_to_string(&history) {
@@ -933,6 +935,10 @@ fn spawn_claude_collector(app: App, claude_home: PathBuf, poll_ms: u64, backfill
             }
 
             poll_session_files(&projects_dir, &app, &mut session_cursors);
+
+            if let Some(evt) = poll_stats_cache(&stats_cache, &app, &mut stats_cache_mtime) {
+                append_event(&app, evt);
+            }
 
             thread::sleep(Duration::from_millis(poll_ms));
         }
