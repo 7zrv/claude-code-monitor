@@ -45,6 +45,9 @@ EOF
 )"
 ```
 
-4. If `$ARGUMENTS` is provided, use it as the related issue number in `Closes #$ARGUMENTS`
+4. 관련 이슈 번호 결정:
+   - `$ARGUMENTS`가 있으면 해당 값을 사용
+   - 없으면 브랜치명 끝의 숫자를 이슈 번호로 추출 (예: `feat/add-cache-18` → `18`)
+   - `Closes #<이슈번호>`를 PR 본문에 포함
 5. Keep the PR title under 70 characters and follow conventional commit style
 6. Return the PR URL when done

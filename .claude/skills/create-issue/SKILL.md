@@ -1,6 +1,6 @@
 ---
 name: create-issue
-description: Create a GitHub issue following Codex Pulse conventions
+description: Create a GitHub issue following project conventions
 argument-hint: "[이슈 제목]"
 disable-model-invocation: true
 allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion
