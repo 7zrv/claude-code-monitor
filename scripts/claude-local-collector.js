@@ -1,6 +1,7 @@
 import { stat, open, readdir, readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const MONITOR_URL = process.env.MONITOR_URL || 'http://localhost:5050/api/events';
 const POLL_MS = Math.max(100, Number(process.env.CLAUDE_POLL_MS) || 2500);
@@ -55,6 +56,7 @@ async function readDelta(filePath) {
 
   if (fileStat.size - cursor.offset > MAX_READ_BYTES) {
     start = fileStat.size - MAX_READ_BYTES;
+    cursor.partial = '';
     dropped = true;
   }
 
@@ -195,6 +197,10 @@ function sessionLineToEvent(line) {
             toolInput: inputStr.length > 512 ? { _truncated: true } : (item.input || {})
           }
         });
+      }
+
+      if (itemType && itemType !== 'text' && itemType !== 'tool_use' && itemType !== 'tool_result') {
+        console.debug(`[collector] unhandled content type: ${itemType}`);
       }
     }
 
@@ -339,13 +345,13 @@ async function pollSessionFiles() {
     }
   }
 
-  for (const filePath of files) {
+  await Promise.all(files.map(async (filePath) => {
     let lines;
     try {
       lines = await readDelta(filePath);
     } catch (err) {
       console.warn(`[collector] session file read failed: ${filePath}: ${err.message}`);
-      continue;
+      return;
     }
 
     for (const line of lines) {
@@ -358,7 +364,7 @@ async function pollSessionFiles() {
         }
       }
     }
-  }
+  }));
 }
 
 async function pollStatsCache() {
@@ -441,7 +447,12 @@ async function boot() {
   }, POLL_MS);
 }
 
-boot().catch((err) => {
-  console.error(`[collector] boot failed: ${err.message}`);
-  process.exit(1);
-});
+export { historyToEvent, sessionLineToEvent, walkJsonlFiles, readDelta, getCursor, cursors };
+
+const isMain = process.argv[1] === fileURLToPath(import.meta.url);
+if (isMain) {
+  boot().catch((err) => {
+    console.error(`[collector] boot failed: ${err.message}`);
+    process.exit(1);
+  });
+}
