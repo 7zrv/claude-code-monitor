@@ -51,5 +51,3 @@ npm run check
 ## 역할 분배 기반 마이그레이션
 - 총괄: [role-plan.md](migration/role-plan.md)
 - 진행 현황: [progress.md](migration/progress.md)
-- 팀 역할 정의: [team.json](agents/team.json)
-- 역할 프롬프트: `/agents/prompts/*.md`
