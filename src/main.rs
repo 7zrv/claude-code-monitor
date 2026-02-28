@@ -167,6 +167,7 @@ fn detect_role(text: &str) -> String {
     "lead".to_string()
 }
 
+#[allow(dead_code)]
 fn extract_u64_after(line: &str, key: &str) -> Option<u64> {
     let pos = line.find(key)?;
     let mut digits = String::new();
@@ -180,6 +181,7 @@ fn extract_u64_after(line: &str, key: &str) -> Option<u64> {
     digits.parse::<u64>().ok()
 }
 
+#[allow(dead_code)]
 fn extract_thread_id(line: &str) -> Option<String> {
     let key = "thread_id=";
     let pos = line.find(key)?;
@@ -725,6 +727,7 @@ fn parse_history_event(line: &str, app: &App) -> Option<Event> {
     })
 }
 
+#[allow(dead_code)]
 fn parse_log_event(
     line: &str,
     app: &App,
@@ -896,16 +899,11 @@ fn parse_log_event(
     None
 }
 
-fn spawn_codex_collector(app: App, codex_home: PathBuf, poll_ms: u64, backfill_lines: usize) {
+fn spawn_claude_collector(app: App, claude_home: PathBuf, poll_ms: u64, backfill_lines: usize) {
     thread::spawn(move || {
-        let history = codex_home.join("history.jsonl");
-        let log = codex_home.join("log").join("codex-tui.log");
+        let history = claude_home.join("history.jsonl");
 
         let mut history_cursor = (0_u64, String::new());
-        let mut log_cursor = (0_u64, String::new());
-        let mut active_role = "lead".to_string();
-        let mut thread_roles: HashMap<String, String> = HashMap::new();
-        let mut thread_token_totals: HashMap<String, u64> = HashMap::new();
 
         // initial backfill
         if let Ok(contents) = std::fs::read_to_string(&history) {
@@ -923,49 +921,13 @@ fn spawn_codex_collector(app: App, codex_home: PathBuf, poll_ms: u64, backfill_l
             }
         }
 
-        if let Ok(contents) = std::fs::read_to_string(&log) {
-            for line in contents
-                .lines()
-                .rev()
-                .take(backfill_lines)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-            {
-                if let Some(evt) = parse_log_event(
-                    line,
-                    &app,
-                    &mut active_role,
-                    &mut thread_roles,
-                    &mut thread_token_totals,
-                ) {
-                    append_event(&app, evt);
-                }
-            }
-        }
-
         if let Ok(meta) = metadata(&history) {
             history_cursor.0 = meta.len();
-        }
-        if let Ok(meta) = metadata(&log) {
-            log_cursor.0 = meta.len();
         }
 
         loop {
             for line in read_delta_lines(&history, &mut history_cursor, 512 * 1024) {
                 if let Some(evt) = parse_history_event(&line, &app) {
-                    append_event(&app, evt);
-                }
-            }
-
-            for line in read_delta_lines(&log, &mut log_cursor, 512 * 1024) {
-                if let Some(evt) = parse_log_event(
-                    &line,
-                    &app,
-                    &mut active_role,
-                    &mut thread_roles,
-                    &mut thread_token_totals,
-                ) {
                     append_event(&app, evt);
                 }
             }
@@ -978,22 +940,22 @@ fn spawn_codex_collector(app: App, codex_home: PathBuf, poll_ms: u64, backfill_l
 fn main() {
     let host = std::env::var("HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     let port = std::env::var("PORT").unwrap_or_else(|_| "5050".to_string());
-    let poll_ms = std::env::var("CODEX_POLL_MS")
+    let poll_ms = std::env::var("CLAUDE_POLL_MS")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(2500);
-    let backfill_lines = std::env::var("CODEX_BACKFILL_LINES")
+    let backfill_lines = std::env::var("CLAUDE_BACKFILL_LINES")
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(25);
 
-    let codex_home = std::env::var("CODEX_HOME")
+    let claude_home = std::env::var("CLAUDE_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
             let home = std::env::var("HOME")
                 .or_else(|_| std::env::var("USERPROFILE"))
                 .unwrap_or_else(|_| ".".to_string());
-            PathBuf::from(home).join(".codex")
+            PathBuf::from(home).join(".claude")
         });
     let api_key = std::env::var("MONITOR_API_KEY")
         .ok()
@@ -1013,10 +975,13 @@ fn main() {
         api_key,
     };
 
-    spawn_codex_collector(app.clone(), codex_home, poll_ms, backfill_lines);
+    spawn_claude_collector(app.clone(), claude_home, poll_ms, backfill_lines);
     spawn_sse_sweeper(app.clone());
 
-    println!("Codex Pulse (Rust) listening on http://{}:{}", host, port);
+    println!(
+        "Claude Monitor (Rust) listening on http://{}:{}",
+        host, port
+    );
 
     for stream in listener.incoming() {
         match stream {
