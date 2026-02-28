@@ -202,12 +202,11 @@ fn build_snapshot(state: &State) -> Snapshot {
         sources,
         recent: state.recent.iter().take(300).cloned().collect(),
         alerts: state.alerts.iter().take(20).cloned().collect(),
-        workflow_progress: vec![
-            workflow_row(state, "lead"),
-            workflow_row(state, "designer"),
-            workflow_row(state, "frontend"),
-            workflow_row(state, "backend"),
-        ],
+        workflow_progress: {
+            let mut keys: Vec<&String> = state.by_agent.keys().collect();
+            keys.sort();
+            keys.iter().map(|k| workflow_row(state, k)).collect()
+        },
     }
 }
 
