@@ -1,8 +1,8 @@
-# Codex Pulse — Claude Code 규칙
+# Claude Monitor — Claude Code 규칙
 
 ## 프로젝트 개요
 
-Codex 에이전트의 실시간 모니터링 대시보드. Rust 백엔드 + Node.js 서버 + Electron 데스크톱 앱 구조.
+Claude 에이전트의 실시간 모니터링 대시보드. Rust 백엔드 + Node.js 서버 + Electron 데스크톱 앱 구조.
 
 ## 기술 스택
 
@@ -22,7 +22,7 @@ scripts/        유틸리티 스크립트 (dispatch, collector, load test)
 agents/         에이전트 설정
 migration/      마이그레이션 파일
 .github/        CI, 이슈/PR 템플릿
-.claude/skills/ Claude Code 스킬 (commit, push, pr)
+.claude/skills/ Claude Code 스킬 (아래 워크플로우 참조)
 ```
 
 ## 빌드 · 검증 명령
@@ -51,7 +51,8 @@ npm start               # 서버 실행
 ## 브랜치 보호
 
 - `main`에 직접 푸시 불가 — 반드시 PR을 거쳐야 함
-- PR 머지 조건: CI 통과 + 1명 이상 승인 + 리뷰 스레드 해결
+- PR 머지 조건: CI 통과 + 1명 이상 승인
+- 어드민은 보호 규칙 우회 가능 (`enforce_admins: false`)
 - 머지 시 소스 브랜치 자동 삭제
 
 ## 브랜치 · 커밋 컨벤션
@@ -104,6 +105,22 @@ npm start               # 서버 실행
 
 ## 비고
 <!-- 참고 사항, 관련 이슈 링크 등 -->
+```
+
+## 스킬 기반 워크플로우
+
+프로젝트의 이슈 관리부터 PR까지 아래 스킬을 순서대로 사용한다:
+
+```
+/create-issue  → 이슈 생성
+/start-issue   → 이슈 선택, 워크트리 생성, 상태 변경
+/plan-issue    → 이슈 분석, 작업 계획(PLAN.md) 작성
+  (구현)
+/review-code   → 현재 브랜치 코드 리뷰
+/commit        → 변경 사항 커밋
+/push          → 리모트 푸시
+/pr            → PR 생성
+/review-pr     → PR 리뷰
 ```
 
 ## 코드 스타일

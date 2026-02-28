@@ -12,13 +12,36 @@ model: haiku
 ## Current State
 
 - **Status**: !`git status --short`
-- **Staged diff**: !`git diff --cached`
-- **Unstaged diff**: !`git diff`
+- **Staged diff stat**: !`git diff --cached --stat`
+- **Unstaged diff stat**: !`git diff --stat`
 - **Recent commits**: !`git log --oneline -5`
 
 ## Instructions
 
-1. Review all changed files above
+**⚠️ Main Branch Protection**
+If on `main` branch, STOP and provide this error message:
+```
+❌ Cannot commit directly to 'main' branch
+
+All changes to 'main' must go through a Pull Request:
+
+1. Create a feature branch:
+   git checkout -b <type>/<name>-<issue-number>
+   Example: git checkout -b feat/parse-history-2
+
+2. Make your changes on the feature branch
+
+3. Push and create a PR:
+   git push -u origin <branch-name>
+   /pr
+
+This protects main from direct commits per CONTRIBUTING.md rules.
+```
+DO NOT proceed with the commit. Return immediately.
+
+---
+
+1. Review the diff stats above. If needed, run `git diff` or `git diff --cached` for full details on specific files.
 2. Stage relevant files by name (`git add <file>...`) — never use `git add -A` or `git add .`
 3. Do not commit files that may contain secrets (.env, credentials, etc.)
 4. Write a commit message following **Conventional Commits**:

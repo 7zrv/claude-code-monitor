@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
@@ -141,62 +141,6 @@ fn status_norm(status: &str) -> String {
         "error" => "error".to_string(),
         "warning" => "warning".to_string(),
         _ => "ok".to_string(),
-    }
-}
-
-fn detect_role(text: &str) -> String {
-    let lower = text.to_lowercase();
-    if lower.contains("design") || lower.contains("디자인") || lower.contains("ui") {
-        return "designer".to_string();
-    }
-    if lower.contains("front")
-        || lower.contains("프론트")
-        || lower.contains("css")
-        || lower.contains("component")
-    {
-        return "frontend".to_string();
-    }
-    if lower.contains("api")
-        || lower.contains("backend")
-        || lower.contains("백엔드")
-        || lower.contains("database")
-        || lower.contains("기능")
-    {
-        return "backend".to_string();
-    }
-    "lead".to_string()
-}
-
-#[allow(dead_code)]
-fn extract_u64_after(line: &str, key: &str) -> Option<u64> {
-    let pos = line.find(key)?;
-    let mut digits = String::new();
-    for ch in line[pos + key.len()..].chars() {
-        if ch.is_ascii_digit() {
-            digits.push(ch);
-        } else if !digits.is_empty() {
-            break;
-        }
-    }
-    digits.parse::<u64>().ok()
-}
-
-#[allow(dead_code)]
-fn extract_thread_id(line: &str) -> Option<String> {
-    let key = "thread_id=";
-    let pos = line.find(key)?;
-    let mut id = String::new();
-    for ch in line[pos + key.len()..].chars() {
-        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
-            id.push(ch);
-        } else if !id.is_empty() {
-            break;
-        }
-    }
-    if id.is_empty() {
-        None
-    } else {
-        Some(id)
     }
 }
 
@@ -702,24 +646,23 @@ fn read_delta_lines(
 
 fn parse_history_event(line: &str, app: &App) -> Option<Event> {
     let v: Value = serde_json::from_str(line).ok()?;
-    let text = v.get("display")?.as_str()?.to_string();
-    let ts_ms = v.get("timestamp").and_then(|x| x.as_i64()).unwrap_or(0);
-    let dt = OffsetDateTime::from_unix_timestamp(ts_ms / 1000)
+    let text = v.get("text")?.as_str()?.to_string();
+    let ts = v.get("ts").and_then(|x| x.as_i64()).unwrap_or(0);
+    let dt = OffsetDateTime::from_unix_timestamp(ts)
         .ok()
         .and_then(|d| d.format(&Rfc3339).ok())
         .unwrap_or_else(now_iso);
 
     Some(Event {
         id: format!("e{}", app.event_seq.fetch_add(1, Ordering::Relaxed)),
-        agent_id: "user".to_string(),
-        event: "user_message".to_string(),
+        agent_id: "lead".to_string(),
+        event: "user_request".to_string(),
         status: "ok".to_string(),
         latency_ms: None,
         message: text.chars().take(120).collect(),
         metadata: json!({
             "source": "claude_history",
-            "sessionId": v.get("sessionId").and_then(|x| x.as_str()).unwrap_or(""),
-            "project": v.get("project").and_then(|x| x.as_str()).unwrap_or(""),
+            "sessionId": v.get("session_id").and_then(|x| x.as_str()).unwrap_or(""),
             "textLength": text.len()
         }),
         timestamp: dt,
@@ -727,185 +670,242 @@ fn parse_history_event(line: &str, app: &App) -> Option<Event> {
     })
 }
 
-#[allow(dead_code)]
-fn parse_log_event(
-    line: &str,
-    app: &App,
-    active_role: &mut String,
-    thread_roles: &mut HashMap<String, String>,
-    thread_token_totals: &mut HashMap<String, u64>,
-) -> Option<Event> {
-    let timestamp = line
-        .split_whitespace()
-        .next()
+fn parse_session_line(line: &str, app: &App) -> Vec<Event> {
+    let v: Value = match serde_json::from_str(line) {
+        Ok(v) => v,
+        Err(_) => return vec![],
+    };
+
+    let msg_type = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
+    let session_id = v
+        .get("sessionId")
+        .and_then(|s| s.as_str())
+        .unwrap_or("")
+        .to_string();
+    let timestamp = v
+        .get("timestamp")
+        .and_then(|t| t.as_str())
         .map(|s| s.to_string())
         .unwrap_or_else(now_iso);
 
-    if line.contains("task_started") {
-        return Some(Event {
-            id: format!("e{}", app.event_seq.fetch_add(1, Ordering::Relaxed)),
-            agent_id: "lead".to_string(),
-            event: "task_started".to_string(),
-            status: "ok".to_string(),
-            latency_ms: None,
-            message: "Codex task started".to_string(),
-            metadata: json!({ "source": "codex_log" }),
-            timestamp,
-            received_at: now_iso(),
-        });
-    }
+    match msg_type {
+        "user" => {
+            let content = v
+                .get("message")
+                .and_then(|m| m.get("content"))
+                .and_then(|c| c.as_str())
+                .unwrap_or("");
 
-    if line.contains("task_complete") {
-        return Some(Event {
-            id: format!("e{}", app.event_seq.fetch_add(1, Ordering::Relaxed)),
-            agent_id: "lead".to_string(),
-            event: "task_complete".to_string(),
-            status: "ok".to_string(),
-            latency_ms: None,
-            message: "Codex task completed".to_string(),
-            metadata: json!({ "source": "codex_log" }),
-            timestamp,
-            received_at: now_iso(),
-        });
-    }
+            if content.is_empty() {
+                return vec![];
+            }
 
-    if line.contains("ToolCall:") {
-        let role = detect_role(line);
-        *active_role = role.clone();
-        if let Some(thread_id) = extract_thread_id(line) {
-            thread_roles.insert(thread_id, role.clone());
+            vec![Event {
+                id: format!("e{}", app.event_seq.fetch_add(1, Ordering::Relaxed)),
+                agent_id: "lead".to_string(),
+                event: "user_message".to_string(),
+                status: "ok".to_string(),
+                latency_ms: None,
+                message: content.chars().take(120).collect(),
+                metadata: json!({
+                    "source": "claude_session",
+                    "sessionId": session_id,
+                }),
+                timestamp,
+                received_at: now_iso(),
+            }]
         }
-        let tool = line
-            .split("ToolCall:")
-            .nth(1)
-            .map(|s| s.trim())
-            .and_then(|s| s.split_whitespace().next())
-            .unwrap_or("unknown_tool")
-            .to_string();
+        "assistant" => {
+            let mut events = Vec::new();
+            let message = v.get("message").unwrap_or(&Value::Null);
+            let model = message
+                .get("model")
+                .and_then(|m| m.as_str())
+                .unwrap_or("")
+                .to_string();
 
-        return Some(Event {
-            id: format!("e{}", app.event_seq.fetch_add(1, Ordering::Relaxed)),
-            agent_id: role,
-            event: "tool_call".to_string(),
-            status: "ok".to_string(),
-            latency_ms: None,
-            message: tool,
-            metadata: json!({ "source": "codex_log", "args": line.chars().take(180).collect::<String>() }),
-            timestamp,
-            received_at: now_iso(),
-        });
-    }
+            if let Some(content_arr) = message.get("content").and_then(|c| c.as_array()) {
+                for item in content_arr {
+                    let item_type = item.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                    match item_type {
+                        "text" => {
+                            let text = item.get("text").and_then(|t| t.as_str()).unwrap_or("");
+                            if !text.is_empty() {
+                                events.push(Event {
+                                    id: format!(
+                                        "e{}",
+                                        app.event_seq.fetch_add(1, Ordering::Relaxed)
+                                    ),
+                                    agent_id: "lead".to_string(),
+                                    event: "assistant_message".to_string(),
+                                    status: "ok".to_string(),
+                                    latency_ms: None,
+                                    message: text.chars().take(120).collect(),
+                                    metadata: json!({
+                                        "source": "claude_session",
+                                        "sessionId": session_id,
+                                        "model": model,
+                                    }),
+                                    timestamp: timestamp.clone(),
+                                    received_at: now_iso(),
+                                });
+                            }
+                        }
+                        "tool_use" => {
+                            let name = item
+                                .get("name")
+                                .and_then(|n| n.as_str())
+                                .unwrap_or("unknown_tool");
+                            let input = item.get("input").cloned().unwrap_or(json!({}));
+                            events.push(Event {
+                                id: format!("e{}", app.event_seq.fetch_add(1, Ordering::Relaxed)),
+                                agent_id: "lead".to_string(),
+                                event: "tool_call".to_string(),
+                                status: "ok".to_string(),
+                                latency_ms: None,
+                                message: name.to_string(),
+                                metadata: json!({
+                                    "source": "claude_session",
+                                    "sessionId": session_id,
+                                    "model": model,
+                                    "toolInput": input,
+                                }),
+                                timestamp: timestamp.clone(),
+                                received_at: now_iso(),
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+            }
 
-    if line.contains("total_usage_tokens=") {
-        let current_total = extract_u64_after(line, "total_usage_tokens=").unwrap_or(0);
-        let thread_id = extract_thread_id(line).unwrap_or_else(|| "global".to_string());
-        let prev_opt = thread_token_totals.get(&thread_id).copied();
-        thread_token_totals.insert(thread_id.clone(), current_total);
-        let prev = prev_opt?;
+            if let Some(usage) = message.get("usage") {
+                let input_tokens = usage
+                    .get("input_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let output_tokens = usage
+                    .get("output_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let cache_read = usage
+                    .get("cache_read_input_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let total = input_tokens + output_tokens;
 
-        let delta = if current_total >= prev {
-            current_total.saturating_sub(prev)
-        } else {
-            0
-        };
-        if delta == 0 {
-            return None;
+                if total > 0 {
+                    events.push(Event {
+                        id: format!("e{}", app.event_seq.fetch_add(1, Ordering::Relaxed)),
+                        agent_id: "lead".to_string(),
+                        event: "token_usage".to_string(),
+                        status: "ok".to_string(),
+                        latency_ms: None,
+                        message: format!("tokens +{}", total),
+                        metadata: json!({
+                            "source": "claude_session",
+                            "sessionId": session_id,
+                            "model": model,
+                            "tokenUsage": {
+                                "inputTokens": input_tokens,
+                                "outputTokens": output_tokens,
+                                "cacheReadInputTokens": cache_read,
+                                "totalTokens": total,
+                            }
+                        }),
+                        timestamp: timestamp.clone(),
+                        received_at: now_iso(),
+                    });
+                }
+            }
+
+            events
         }
+        _ => vec![],
+    }
+}
 
-        let role = thread_roles
-            .get(&thread_id)
-            .cloned()
-            .unwrap_or_else(|| active_role.clone());
+fn walk_jsonl_files(dir: &Path) -> Vec<PathBuf> {
+    let mut result = Vec::new();
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return result,
+    };
 
-        return Some(Event {
-            id: format!("e{}", app.event_seq.fetch_add(1, Ordering::Relaxed)),
-            agent_id: role,
-            event: "token_count".to_string(),
-            status: "ok".to_string(),
-            latency_ms: None,
-            message: format!("tokens +{}", delta),
-            metadata: json!({
-                "source": "codex_log",
-                "threadId": thread_id,
-                "tokenUsage": {
-                    "totalTokens": delta,
-                    "cumulativeTotalTokens": current_total
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if let Ok(sub_entries) = std::fs::read_dir(&path) {
+                for sub_entry in sub_entries.flatten() {
+                    let sub_path = sub_entry.path();
+                    if sub_path.is_file()
+                        && sub_path.extension().map(|e| e == "jsonl").unwrap_or(false)
+                    {
+                        result.push(sub_path);
+                    }
                 }
-            }),
-            timestamp,
-            received_at: now_iso(),
-        });
+            }
+        }
     }
+    result
+}
 
-    if line.contains("token_count") {
-        let total = extract_u64_after(line, "\"total_tokens\":")
-            .or_else(|| extract_u64_after(line, "\"totalTokens\":"))
-            .unwrap_or(0);
-        let input = extract_u64_after(line, "\"input_tokens\":")
-            .or_else(|| extract_u64_after(line, "\"inputTokens\":"))
-            .unwrap_or(0);
-        let output = extract_u64_after(line, "\"output_tokens\":")
-            .or_else(|| extract_u64_after(line, "\"outputTokens\":"))
-            .unwrap_or(0);
-
-        return Some(Event {
-            id: format!("e{}", app.event_seq.fetch_add(1, Ordering::Relaxed)),
-            agent_id: active_role.clone(),
-            event: "token_count".to_string(),
-            status: "ok".to_string(),
-            latency_ms: None,
-            message: format!("tokens +{}", total),
-            metadata: json!({
-                "source": "codex_log",
-                "tokenUsage": {
-                    "totalTokens": total,
-                    "inputTokens": input,
-                    "outputTokens": output
-                }
-            }),
-            timestamp,
-            received_at: now_iso(),
-        });
+fn poll_session_files(
+    projects_dir: &Path,
+    app: &App,
+    cursors: &mut HashMap<PathBuf, (u64, String)>,
+) {
+    let files = walk_jsonl_files(projects_dir);
+    for file in files {
+        let cursor = cursors.entry(file.clone()).or_insert((0, String::new()));
+        let lines = read_delta_lines(&file, cursor, 512 * 1024);
+        for line in lines {
+            let events = parse_session_line(&line, app);
+            for evt in events {
+                append_event(app, evt);
+            }
+        }
     }
+}
 
-    if line.contains("needs_follow_up=true") {
-        return Some(Event {
-            id: format!("e{}", app.event_seq.fetch_add(1, Ordering::Relaxed)),
-            agent_id: "lead".to_string(),
-            event: "follow_up_required".to_string(),
-            status: "warning".to_string(),
-            latency_ms: None,
-            message: "needs_follow_up=true".to_string(),
-            metadata: json!({ "source": "codex_log" }),
-            timestamp,
-            received_at: now_iso(),
-        });
+#[allow(dead_code)]
+fn poll_stats_cache(path: &Path, app: &App, last_mtime: &mut Option<SystemTime>) -> Option<Event> {
+    let meta = metadata(path).ok()?;
+    let mtime = meta.modified().ok()?;
+
+    if *last_mtime == Some(mtime) {
+        return None;
     }
+    *last_mtime = Some(mtime);
 
-    if line.contains(" ERROR ") || line.contains("error=") {
-        return Some(Event {
-            id: format!("e{}", app.event_seq.fetch_add(1, Ordering::Relaxed)),
-            agent_id: "backend".to_string(),
-            event: "runtime_error".to_string(),
-            status: "error".to_string(),
-            latency_ms: None,
-            message: line.chars().take(120).collect(),
-            metadata: json!({ "source": "codex_log" }),
-            timestamp,
-            received_at: now_iso(),
-        });
-    }
+    let content = std::fs::read_to_string(path).ok()?;
+    let v: Value = serde_json::from_str(&content).ok()?;
 
-    None
+    Some(Event {
+        id: format!("e{}", app.event_seq.fetch_add(1, Ordering::Relaxed)),
+        agent_id: "lead".to_string(),
+        event: "cost_update".to_string(),
+        status: "ok".to_string(),
+        latency_ms: None,
+        message: "stats cache updated".to_string(),
+        metadata: json!({
+            "source": "claude_session",
+            "stats": v,
+        }),
+        timestamp: now_iso(),
+        received_at: now_iso(),
+    })
 }
 
 fn spawn_claude_collector(app: App, claude_home: PathBuf, poll_ms: u64, backfill_lines: usize) {
     thread::spawn(move || {
         let history = claude_home.join("history.jsonl");
+        let projects_dir = claude_home.join("projects");
 
         let mut history_cursor = (0_u64, String::new());
+        let mut session_cursors: HashMap<PathBuf, (u64, String)> = HashMap::new();
 
-        // initial backfill
+        // initial backfill from history.jsonl
         if let Ok(contents) = std::fs::read_to_string(&history) {
             for line in contents
                 .lines()
@@ -931,6 +931,8 @@ fn spawn_claude_collector(app: App, claude_home: PathBuf, poll_ms: u64, backfill
                     append_event(&app, evt);
                 }
             }
+
+            poll_session_files(&projects_dir, &app, &mut session_cursors);
 
             thread::sleep(Duration::from_millis(poll_ms));
         }
@@ -978,10 +980,7 @@ fn main() {
     spawn_claude_collector(app.clone(), claude_home, poll_ms, backfill_lines);
     spawn_sse_sweeper(app.clone());
 
-    println!(
-        "Claude Monitor (Rust) listening on http://{}:{}",
-        host, port
-    );
+    println!("Claude Code Monitor listening on http://{}:{}", host, port);
 
     for stream in listener.incoming() {
         match stream {
