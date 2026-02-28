@@ -45,10 +45,8 @@ npm start               # 서버 실행
 
 1. `cargo fmt --check`
 2. `cargo clippy -- -D warnings`
-3. `cargo test`
-4. `cargo tarpaulin --fail-under 80`
-5. `cargo build`
-6. `npm run check`
+3. `cargo tarpaulin --fail-under 80` (테스트 + 커버리지)
+4. `npm run check`
 
 ## 브랜치 보호
 

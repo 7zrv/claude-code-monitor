@@ -30,17 +30,10 @@ jobs:
       - name: Rust lint
         run: cargo clippy -- -D warnings
 
-      - name: Rust test
-        run: cargo test
-
-      - name: Install cargo-tarpaulin
-        run: cargo install cargo-tarpaulin
+      - uses: taiki-e/install-action@cargo-tarpaulin
 
       - name: Test coverage (min 80%)
         run: cargo tarpaulin --fail-under 80
-
-      - name: Rust build
-        run: cargo build
 
       - name: Node syntax check
         run: npm run check
