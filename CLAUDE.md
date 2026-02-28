@@ -33,6 +33,7 @@ cargo build --release   # Rust 빌드 (release)
 cargo fmt --check       # 포맷 검사
 cargo clippy -- -D warnings  # 린트
 cargo test              # Rust 테스트
+cargo tarpaulin --fail-under 80  # 커버리지 검사 (최소 80%)
 npm install             # Node 의존성 설치
 npm run check           # Node 구문 검사 (전체 JS 파일)
 npm start               # 서버 실행
@@ -44,9 +45,8 @@ npm start               # 서버 실행
 
 1. `cargo fmt --check`
 2. `cargo clippy -- -D warnings`
-3. `cargo test`
-4. `cargo build`
-5. `npm run check`
+3. `cargo tarpaulin --fail-under 80` (테스트 + 커버리지)
+4. `npm run check`
 
 ## 브랜치 보호
 
@@ -122,6 +122,44 @@ npm start               # 서버 실행
 /pr            → PR 생성
 /review-pr     → PR 리뷰
 ```
+
+## TDD (Test-Driven Development)
+
+모든 구현은 반드시 TDD 방식으로 진행한다. **테스트 없는 구현 코드 작성을 금지한다.**
+
+### Red-Green-Refactor 사이클
+
+1. **Red** — 실패하는 테스트를 먼저 작성한다.
+   - 구현할 기능의 기대 동작을 테스트로 정의한다.
+   - `cargo test` 또는 해당 테스트 명령으로 테스트가 **실패하는 것을 확인**한다.
+2. **Green** — 테스트를 통과하는 최소한의 구현 코드를 작성한다.
+   - 테스트를 통과시키는 데 필요한 코드만 작성한다.
+   - 불필요한 기능을 미리 추가하지 않는다.
+3. **Refactor** — 테스트가 통과하는 상태를 유지하며 코드를 정리한다.
+   - 중복 제거, 네이밍 개선, 구조 정리 등을 수행한다.
+   - 리팩터링 후 테스트가 여전히 통과하는지 확인한다.
+
+### TDD 규칙
+
+- 구현 코드를 작성하기 **전에** 반드시 해당 기능의 테스트를 먼저 작성한다.
+- 한 번에 하나의 테스트만 추가하고, 그 테스트를 통과시킨 후 다음 테스트로 넘어간다.
+- 테스트 실행 결과(실패 → 성공)를 각 단계에서 확인한다.
+- 커밋 시 모든 테스트가 통과해야 한다 (`cargo test` 성공).
+
+### 테스트 작성 기준
+
+- **Rust**: `#[cfg(test)]` 모듈 내에 `#[test]` 함수로 작성한다.
+- **JS**: 해당 파일과 동일 디렉토리 또는 `__tests__/` 디렉토리에 테스트 파일을 둔다.
+- 단위 테스트를 우선하고, 필요 시 통합 테스트를 추가한다.
+- 경계값, 에러 케이스, 정상 케이스를 모두 커버한다.
+
+### 테스트 커버리지
+
+- **최소 커버리지: 80%** — 이 기준 미달 시 CI가 실패한다.
+- 측정 도구: `cargo-tarpaulin`
+- 커버리지 확인 명령: `cargo tarpaulin --fail-under 80`
+- 새로운 코드를 작성할 때 기존 커버리지를 낮추지 않아야 한다.
+- 커버리지가 부족하면 추가 테스트를 작성한 후 커밋한다.
 
 ## 코드 스타일
 

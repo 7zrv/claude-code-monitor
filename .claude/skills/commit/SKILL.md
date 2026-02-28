@@ -47,13 +47,15 @@ DO NOT proceed with the commit. Return immediately.
 4. Write a commit message following **Conventional Commits**:
 
 ```
-<type>(<scope>): <description>
+<type>(<scope>): <한국어 설명>
 ```
 
 - **Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `ci`
 - **Scopes** (optional): `api`, `sse`, `ui`, `desktop`, `collector`, `docs`
-- Subject line: lowercase, max 70 chars, no period
+- **description은 반드시 한국어로 작성한다** (type, scope은 영어 유지)
+- Subject line: max 70 chars, no period
 - If `$ARGUMENTS` is provided, use it as the commit message basis
+- 예시: `feat(api): 세션 파싱 기능 추가`, `fix(ui): 대시보드 렌더링 오류 수정`
 
 5. Always append the co-author trailer:
 
@@ -65,7 +67,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 
 ```bash
 git commit -m "$(cat <<'EOF'
-<type>(<scope>): <description>
+<type>(<scope>): <한국어 설명>
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 EOF
