@@ -14,7 +14,8 @@
     "dispatch": "node scripts/dispatch.js",
     "collect:codex": "node scripts/codex-local-collector.js",
     "desktop:start": "electron .",
-    "check": "node --check server.js && node --check simulator.js && node --check scripts/frontend-load-test.js && node --check scripts/dispatch.js && node --check scripts/codex-local-collector.js && node --check public/app.js && node --check desktop/main.js"
+    "test:js": "node --test 'public/__tests__/**/*.test.js'",
+    "check": "node --check server.js && node --check simulator.js && node --check scripts/frontend-load-test.js && node --check scripts/dispatch.js && node --check scripts/codex-local-collector.js && node --check public/app.js && node --check public/lib/workflow.js && node --check desktop/main.js"
   },
   "devDependencies": {
     "electron": "^35.0.0"
