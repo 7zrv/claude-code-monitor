@@ -3,7 +3,7 @@ name: start-issue
 description: Pick a ready issue, create a branch, and update issue status
 disable-model-invocation: true
 allowed-tools: Bash, Read, AskUserQuestion
-model: sonnet
+model: haiku
 ---
 
 # 이슈 작업 시작
@@ -41,11 +41,14 @@ model: sonnet
 - 예: "CI 워크플로우에 캐싱 추가하기" (이슈 #18) → `feat/ci-caching-18`
 - **필수**: AskUserQuestion으로 생성된 브랜치명을 제시하고 수정 기회를 제공한다
 
-### 4. 브랜치 생성 및 checkout
+### 4. 워크트리 생성 및 이동
 ```bash
 git checkout main && git pull
-git checkout -b <브랜치명>
+git worktree add .claude/worktrees/<브랜치명> -b <브랜치명>
+cd .claude/worktrees/<브랜치명>
 ```
+- `.claude/worktrees/` 하위에 격리된 워크트리를 생성한다
+- 생성된 워크트리 디렉토리로 작업 디렉토리를 변경한다
 
 ### 5. 이슈 상태 변경
 ```bash
@@ -57,5 +60,6 @@ gh issue edit <이슈번호> --remove-label "status: ready" --add-label "status:
 ✅ 작업 준비 완료
 - 이슈: #<번호> <제목>
 - 브랜치: <브랜치명>
+- 워크트리: .claude/worktrees/<브랜치명>
 - 상태: status: ready → status: in-progress
 ```
