@@ -12,13 +12,13 @@ model: haiku
 ## Current State
 
 - **Status**: !`git status --short`
-- **Staged diff**: !`git diff --cached`
-- **Unstaged diff**: !`git diff`
+- **Staged diff stat**: !`git diff --cached --stat`
+- **Unstaged diff stat**: !`git diff --stat`
 - **Recent commits**: !`git log --oneline -5`
 
 ## Instructions
 
-1. Review all changed files above
+1. Review the diff stats above. If needed, run `git diff` or `git diff --cached` for full details on specific files.
 2. Stage relevant files by name (`git add <file>...`) — never use `git add -A` or `git add .`
 3. Do not commit files that may contain secrets (.env, credentials, etc.)
 4. Write a commit message following **Conventional Commits**:
