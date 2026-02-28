@@ -646,23 +646,24 @@ fn read_delta_lines(
 
 fn parse_history_event(line: &str, app: &App) -> Option<Event> {
     let v: Value = serde_json::from_str(line).ok()?;
-    let text = v.get("text")?.as_str()?.to_string();
-    let ts = v.get("ts").and_then(|x| x.as_i64()).unwrap_or(0);
-    let dt = OffsetDateTime::from_unix_timestamp(ts)
+    let text = v.get("display")?.as_str()?.to_string();
+    let ts_ms = v.get("timestamp").and_then(|x| x.as_i64()).unwrap_or(0);
+    let dt = OffsetDateTime::from_unix_timestamp(ts_ms / 1000)
         .ok()
         .and_then(|d| d.format(&Rfc3339).ok())
         .unwrap_or_else(now_iso);
 
     Some(Event {
         id: format!("e{}", app.event_seq.fetch_add(1, Ordering::Relaxed)),
-        agent_id: "lead".to_string(),
-        event: "user_request".to_string(),
+        agent_id: "user".to_string(),
+        event: "user_message".to_string(),
         status: "ok".to_string(),
         latency_ms: None,
         message: text.chars().take(120).collect(),
         metadata: json!({
             "source": "claude_history",
-            "sessionId": v.get("session_id").and_then(|x| x.as_str()).unwrap_or(""),
+            "sessionId": v.get("sessionId").and_then(|x| x.as_str()).unwrap_or(""),
+            "project": v.get("project").and_then(|x| x.as_str()).unwrap_or(""),
             "textLength": text.len()
         }),
         timestamp: dt,
