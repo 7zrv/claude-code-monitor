@@ -46,6 +46,7 @@ struct AgentRow {
     warning: u64,
     error: u64,
     token_total: u64,
+    cost_usd: f64,
     last_event: String,
     latency_ms: Option<i64>,
 }
@@ -90,6 +91,7 @@ struct State {
     by_agent: HashMap<String, AgentRow>,
     by_source: HashMap<String, SourceRow>,
     token_total: u64,
+    cost_total_usd: f64,
 }
 
 #[derive(Serialize)]
@@ -184,7 +186,7 @@ fn build_snapshot(state: &State) -> Snapshot {
     sources.sort_by(|a, b| a.source.cmp(&b.source));
 
     let totals = agents.iter().fold(
-        json!({ "agents": agents.len(), "total": 0, "ok": 0, "warning": 0, "error": 0, "tokenTotal": 0 }),
+        json!({ "agents": agents.len(), "total": 0, "ok": 0, "warning": 0, "error": 0, "tokenTotal": 0, "costTotalUsd": state.cost_total_usd }),
         |mut acc, row| {
             acc["total"] = json!(acc["total"].as_u64().unwrap_or(0) + row.total);
             acc["ok"] = json!(acc["ok"].as_u64().unwrap_or(0) + row.ok);
@@ -229,6 +231,7 @@ fn append_event(app: &App, evt: Event) {
                 warning: 0,
                 error: 0,
                 token_total: 0,
+                cost_usd: 0.0,
                 last_event: evt.event.clone(),
                 latency_ms: None,
             });
@@ -249,9 +252,29 @@ fn append_event(app: &App, evt: Event) {
             .and_then(|v| v.get("totalTokens"))
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
+        let cost_delta = if evt.event == "cost_update" {
+            evt.metadata
+                .get("costDelta")
+                .and_then(|v| v.as_f64())
+                .filter(|&d| d > 0.0)
+                .unwrap_or(0.0)
+        } else {
+            0.0
+        };
+
         if token_total > 0 {
             row.token_total += token_total;
+        }
+        if cost_delta > 0.0 {
+            row.cost_usd += cost_delta;
+        }
+
+        // row is no longer used — update state-level accumulators
+        if token_total > 0 {
             state.token_total += token_total;
+        }
+        if cost_delta > 0.0 {
+            state.cost_total_usd += cost_delta;
         }
 
         let source = evt
@@ -867,18 +890,49 @@ fn poll_session_files(
     }
 }
 
-#[allow(dead_code)]
-fn poll_stats_cache(path: &Path, app: &App, last_mtime: &mut Option<SystemTime>) -> Option<Event> {
+fn poll_stats_cache(
+    path: &Path,
+    app: &App,
+    last_mtime: &mut Option<SystemTime>,
+    last_cost: &mut f64,
+) -> Option<Event> {
     let meta = metadata(path).ok()?;
     let mtime = meta.modified().ok()?;
 
     if *last_mtime == Some(mtime) {
         return None;
     }
-    *last_mtime = Some(mtime);
 
+    // If read/parse fails, last_mtime stays unchanged so we retry on next poll
     let content = std::fs::read_to_string(path).ok()?;
     let v: Value = serde_json::from_str(&content).ok()?;
+
+    let total_cost = v
+        .get("modelUsage")
+        .and_then(|u| u.as_object())
+        .map(|models| {
+            models
+                .values()
+                .filter_map(|m| m.get("costUSD").and_then(|c| c.as_f64()))
+                .sum::<f64>()
+        })
+        .unwrap_or(0.0);
+
+    // is_first is true only when initialization failed (stats-cache.json absent at startup)
+    let is_first = last_mtime.is_none();
+    *last_mtime = Some(mtime);
+
+    if is_first {
+        *last_cost = total_cost;
+        return None;
+    }
+
+    let delta = total_cost - *last_cost;
+    if delta <= 0.0 {
+        return None;
+    }
+
+    *last_cost = total_cost;
 
     Some(Event {
         id: format!("e{}", app.event_seq.fetch_add(1, Ordering::Relaxed)),
@@ -886,10 +940,11 @@ fn poll_stats_cache(path: &Path, app: &App, last_mtime: &mut Option<SystemTime>)
         event: "cost_update".to_string(),
         status: "ok".to_string(),
         latency_ms: None,
-        message: "stats cache updated".to_string(),
+        message: format!("cost +${:.6}", delta),
         metadata: json!({
-            "source": "claude_session",
-            "stats": v,
+            "source": "stats_cache",
+            "costDelta": delta,
+            "costTotalUsd": total_cost,
         }),
         timestamp: now_iso(),
         received_at: now_iso(),
@@ -901,10 +956,34 @@ fn spawn_claude_collector(app: App, claude_home: PathBuf, poll_ms: u64, backfill
         let history = claude_home.join("history.jsonl");
         let projects_dir = claude_home.join("projects");
         let stats_cache = claude_home.join("stats-cache.json");
-
         let mut history_cursor = (0_u64, String::new());
         let mut session_cursors: HashMap<PathBuf, (u64, String)> = HashMap::new();
-        let mut stats_cache_mtime: Option<SystemTime> = None;
+        let mut stats_last_mtime: Option<SystemTime> = None;
+        let mut stats_last_cost: f64 = 0.0;
+
+        // initialize cost_total_usd from stats-cache.json (no event generated)
+        if let Ok(content) = std::fs::read_to_string(&stats_cache) {
+            if let Ok(v) = serde_json::from_str::<Value>(&content) {
+                let initial: f64 = v
+                    .get("modelUsage")
+                    .and_then(|u| u.as_object())
+                    .map(|m| {
+                        m.values()
+                            .filter_map(|e| e.get("costUSD").and_then(|c| c.as_f64()))
+                            .sum()
+                    })
+                    .unwrap_or(0.0);
+                stats_last_cost = initial;
+                if let Ok(mut state) = app.state.lock() {
+                    state.cost_total_usd = initial;
+                }
+                if let Ok(meta) = metadata(&stats_cache) {
+                    if let Ok(mtime) = meta.modified() {
+                        stats_last_mtime = Some(mtime);
+                    }
+                }
+            }
+        }
 
         // initial backfill from history.jsonl
         if let Ok(contents) = std::fs::read_to_string(&history) {
@@ -935,7 +1014,12 @@ fn spawn_claude_collector(app: App, claude_home: PathBuf, poll_ms: u64, backfill
 
             poll_session_files(&projects_dir, &app, &mut session_cursors);
 
-            if let Some(evt) = poll_stats_cache(&stats_cache, &app, &mut stats_cache_mtime) {
+            if let Some(evt) = poll_stats_cache(
+                &stats_cache,
+                &app,
+                &mut stats_last_mtime,
+                &mut stats_last_cost,
+            ) {
                 append_event(&app, evt);
             }
 
