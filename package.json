@@ -1,0 +1,25 @@
+{
+  "name": "codex-pulse",
+  "version": "0.1.0",
+  "description": "Lightweight Codex Pulse monitoring dashboard",
+  "main": "desktop/main.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "rust:start": "cargo run --release",
+    "rust:build": "cargo build --release",
+    "rust:check": "cargo check",
+    "simulate": "node simulator.js",
+    "test:frontend:load": "node scripts/frontend-load-test.js",
+    "dispatch": "node scripts/dispatch.js",
+    "collect:codex": "node scripts/codex-local-collector.js",
+    "desktop:start": "electron .",
+    "check": "node --check server.js && node --check simulator.js && node --check scripts/frontend-load-test.js && node --check scripts/dispatch.js && node --check scripts/codex-local-collector.js && node --check public/app.js && node --check desktop/main.js"
+  },
+  "devDependencies": {
+    "electron": "^35.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

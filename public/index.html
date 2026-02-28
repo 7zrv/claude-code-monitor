@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Codex Pulse</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="header">
+      <h1>Codex Pulse</h1>
+      <p>Codex Pulse 실시간 이벤트/상태 모니터링</p>
+      <div class="header-meta">
+        <small id="clock"></small>
+        <span id="connection" class="status-pill" data-status="reconnecting">reconnecting</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="cards" id="cards"></section>
+
+      <section class="panel">
+        <h2>Realtime Graphs</h2>
+        <div class="charts-grid">
+          <article class="chart-card">
+            <h3>이벤트 처리량 (분당)</h3>
+            <svg id="throughputChart" class="throughput-chart" role="img" aria-label="분당 이벤트 처리량 바 차트" viewBox="0 0 640 220" preserveAspectRatio="none"></svg>
+            <div id="throughputTooltip" class="chart-tooltip" hidden></div>
+          </article>
+          <article class="chart-card">
+            <h3>에이전트별 토큰 추이 (분당)</h3>
+            <svg id="tokenTrendChart" class="token-trend-chart" role="img" aria-label="에이전트별 분당 토큰 사용량 추이 차트" viewBox="0 0 640 220" preserveAspectRatio="none"></svg>
+            <div id="tokenTrendLegend" class="token-legend"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Workflow 진행 현황</h2>
+        <div class="workflow" id="workflow"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Local Codex Feed</h2>
+        <div class="workflow" id="sources"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Agent 상태</h2>
+          <label for="agentFilter">Role Filter</label>
+          <select id="agentFilter">
+            <option value="all">all</option>
+            <option value="lead">lead</option>
+            <option value="designer">designer</option>
+            <option value="frontend">frontend</option>
+            <option value="backend">backend</option>
+          </select>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Last Seen</th>
+              <th>Total</th>
+              <th>OK</th>
+              <th>Warn</th>
+              <th>Error</th>
+              <th>Tokens</th>
+              <th>Last Event</th>
+              <th>Latency</th>
+            </tr>
+          </thead>
+          <tbody id="agentsBody"></tbody>
+        </table>
+      </section>
+
+      <section class="panel">
+        <h2>최근 이벤트</h2>
+        <div class="panel-head">
+          <label for="eventStatusFilter">Status</label>
+          <select id="eventStatusFilter">
+            <option value="all">all</option>
+            <option value="ok">ok</option>
+            <option value="warning">warning</option>
+            <option value="error">error</option>
+          </select>
+          <label for="eventLimit">Rows</label>
+          <select id="eventLimit">
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="200">200</option>
+          </select>
+          <input id="eventSearch" type="search" placeholder="event/message 검색" />
+        </div>
+        <small id="eventMeta"></small>
+        <div id="events" class="events"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Alerts (warning/error)</h2>
+        <div id="alerts" class="events"></div>
+      </section>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

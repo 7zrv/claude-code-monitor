@@ -1,0 +1,40 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: npm install
+
+      - name: Rust format check
+        run: cargo fmt --check
+
+      - name: Rust lint
+        run: cargo clippy -- -D warnings
+
+      - name: Rust test
+        run: cargo test
+
+      - name: Rust build
+        run: cargo build
+
+      - name: Node syntax check
+        run: npm run check
