@@ -1,7 +1,7 @@
 {
-  "name": "codex-pulse",
+  "name": "claude-code-monitor",
   "version": "0.1.0",
-  "description": "Lightweight Codex Pulse monitoring dashboard",
+  "description": "Lightweight Claude Code monitoring dashboard",
   "main": "desktop/main.js",
   "type": "module",
   "scripts": {
