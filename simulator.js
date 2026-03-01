@@ -1,6 +1,6 @@
 const TARGET = process.env.MONITOR_URL || 'http://localhost:5050/api/events';
-const AGENTS = ['lead', 'designer', 'frontend', 'backend'];
-const EVENTS = ['heartbeat', 'task_started', 'task_completed', 'tool_call'];
+export const AGENTS = ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5'];
+export const EVENTS = ['heartbeat', 'session_start', 'session_end', 'tool_call', 'user_message', 'token_usage'];
 
 function pick(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
@@ -46,9 +46,11 @@ async function postEvent() {
   console.log(`[${new Date().toISOString()}] sent ${payload.agentId}/${payload.event}/${payload.status} -> ${body.id}`);
 }
 
-console.log(`Sending sample events to ${TARGET}`);
-setInterval(() => {
-  postEvent().catch((err) => {
-    console.error(err.message);
-  });
-}, 1500);
+if (import.meta.url === `file://${process.argv[1]}`) {
+  console.log(`Sending sample events to ${TARGET}`);
+  setInterval(() => {
+    postEvent().catch((err) => {
+      console.error(err.message);
+    });
+  }, 1500);
+}
