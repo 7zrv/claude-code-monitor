@@ -45,7 +45,7 @@
 - [x] Rust 프로젝트 생성 (`Cargo.toml`, `src/main.rs`)
 - [x] API 구현 (`/api/health`, `/api/events`, `/api/alerts`, `/api/stream`)
 - [x] SSE 브로드캐스트 구현
-- [x] `.codex/history.jsonl`, `.codex/log/codex-tui.log` 수집 내장
+- [x] `.claude/history.jsonl`, `.claude/projects/` 수집 내장
 - [x] source/agent/workflow/alerts 집계 구현
 - [x] 파일감시/영속화/보안 개선 과제 도출
 - [x] API Key 기반 입력 보호(`MONITOR_API_KEY`) 착수

@@ -1,6 +1,6 @@
-# Contributing to Codex Pulse
+# Contributing to Claude Monitor
 
-Thank you for your interest in contributing to Codex Pulse!
+Thank you for your interest in contributing to Claude Monitor!
 
 ## Prerequisites
 
@@ -12,8 +12,8 @@ Thank you for your interest in contributing to Codex Pulse!
 
 ```bash
 # Clone the repository
-git clone https://github.com/<owner>/codex-pulse.git
-cd codex-pulse
+git clone https://github.com/<owner>/claude-code-monitor.git
+cd claude-code-monitor
 
 # Install Node dependencies
 npm install

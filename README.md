@@ -1,18 +1,18 @@
-# Codex Pulse
+# Claude Monitor
 
-[![GitHub release](https://img.shields.io/github/v/release/7zrv/codex-pulse)](https://github.com/7zrv/codex-pulse/releases)
-[![License](https://img.shields.io/github/license/7zrv/codex-pulse)](https://github.com/7zrv/codex-pulse/blob/main/LICENSE)
+[![GitHub release](https://img.shields.io/github/v/release/7zrv/claude-code-monitor)](https://github.com/7zrv/claude-code-monitor/releases)
+[![License](https://img.shields.io/github/license/7zrv/claude-code-monitor)](https://github.com/7zrv/claude-code-monitor/blob/main/LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.56%2B-orange?logo=rust)](https://www.rust-lang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-green?logo=node.js)](https://nodejs.org/)
 
-Codex 로컬 앱 사용 환경을 기준으로, Rust 백엔드 + 기존 정적 UI(`public/*`)로 마이그레이션한 모니터입니다.
+Claude Code 에이전트의 실시간 모니터링 대시보드. Rust 백엔드 + 정적 UI(`public/*`) 구조.
 
 ## 핵심 기능
 - `POST /api/events` 이벤트 수집
 - `GET /api/events` 스냅샷
 - `GET /api/stream` SSE 스트림
 - `GET /api/alerts` 경고/오류 알림
-- `~/.codex/history.jsonl`, `~/.codex/log/codex-tui.log` 자동 수집(내장)
+- `~/.claude/history.jsonl`, `~/.claude/projects/` 자동 수집(내장)
 - 대시보드: agent/workflow/source/alerts/최근 이벤트
 - 토큰 지표: 총 토큰(`totals.tokenTotal`) + 에이전트별 토큰(`agents[].tokenTotal`)
 
@@ -26,9 +26,9 @@ cargo run --release
 환경변수:
 - `PORT` (기본: `5050`)
 - `HOST` (기본: `127.0.0.1`)
-- `CODEX_HOME` (기본: `~/.codex`)
-- `CODEX_POLL_MS` (기본: `2500`)
-- `CODEX_BACKFILL_LINES` (기본: `25`)
+- `CLAUDE_HOME` (기본: `~/.claude`)
+- `CLAUDE_POLL_MS` (기본: `2500`)
+- `CLAUDE_BACKFILL_LINES` (기본: `25`)
 - `MONITOR_API_KEY` (설정 시 `POST /api/events`에 `x-api-key` 필수)
 - `PUBLIC_DIR` (기본: `public`) — 정적 파일 디렉토리 경로
 - `HTTP_READ_TIMEOUT_SEC` (기본: `5`)

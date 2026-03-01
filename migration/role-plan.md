@@ -2,10 +2,10 @@
 
 ## 총괄 에이전트 (lead)
 - 목표: Node/Electron 중심 구조에서 Rust 중심 구조로 이전
-- 범위: 이벤트 수집, 상태 집계, SSE, 정적 대시보드 서빙, Codex 로컬 로그 수집
+- 범위: 이벤트 수집, 상태 집계, SSE, 정적 대시보드 서빙, Claude 로컬 로그 수집
 - 수락 기준:
   - Rust 바이너리 1개로 `/api/health`, `/api/events`, `/api/stream`, `/api/alerts` 제공
-  - `~/.codex` 입력으로 이벤트가 수집됨
+  - `~/.claude` 입력으로 이벤트가 수집됨
   - 기존 UI(`public/*`)가 그대로 동작
 
 ## 디자이너 에이전트 (designer)
@@ -25,7 +25,7 @@
 - 작업:
   - Rust `std` 기반 HTTP 서버 구현
   - SSE 브로드캐스트, 상태 집계, 알림 집계
-  - `~/.codex/history.jsonl`, `~/.codex/log/codex-tui.log` 폴링 수집기 내장
+  - `~/.claude/history.jsonl`, `~/.claude/projects/` 폴링 수집기 내장
 - 검증:
   - `cargo build` 성공
   - 스모크 테스트로 이벤트 적재 확인

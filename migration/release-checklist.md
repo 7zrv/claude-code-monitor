@@ -10,7 +10,7 @@
 - [ ] `/api/health` 정상
 - [x] `/api/events` 스냅샷 정상
 - [ ] `/api/stream` SSE 연결/재연결 정상
-- [x] `.codex` 수집 이벤트가 대시보드에 반영됨
+- [x] `.claude` 수집 이벤트가 대시보드에 반영됨
 
 ## Quality Gate
 - [x] 2색 제한 준수 (`#E26D5C`, `#F6EDE3`)

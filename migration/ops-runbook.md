@@ -11,8 +11,8 @@
 
 ## Incident: No Event Updates
 1. `/api/health` 확인
-2. `CODEX_HOME` 경로 확인
-3. `.codex/history.jsonl`, `.codex/log/codex-tui.log` 갱신 여부 확인
+2. `CLAUDE_HOME` 경로 확인
+3. `.claude/history.jsonl`, `.claude/projects/` 갱신 여부 확인
 4. 앱 재기동
 
 ## Incident: Unauthorized POST
