@@ -11,9 +11,10 @@
     "rust:check": "cargo check",
     "simulate": "node simulator.js",
     "test:frontend:load": "node scripts/frontend-load-test.js",
-    "collect:codex": "node scripts/codex-local-collector.js",
+    "collect:claude": "node scripts/claude-local-collector.js",
     "desktop:start": "electron .",
-    "check": "node --check server.js && node --check simulator.js && node --check scripts/frontend-load-test.js && node --check scripts/codex-local-collector.js && node --check public/app.js && node --check desktop/main.js"
+    "test:collector": "node --test scripts/__tests__/claude-local-collector.test.js",
+    "check": "node --check server.js && node --check simulator.js && node --check scripts/frontend-load-test.js && node --check scripts/claude-local-collector.js && node --check scripts/__tests__/claude-local-collector.test.js && node --check public/app.js && node --check desktop/main.js"
   },
   "devDependencies": {
     "electron": "^35.0.0"
