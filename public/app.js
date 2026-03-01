@@ -1,4 +1,5 @@
 import { recalcWorkflow } from './lib/workflow.js';
+import { buildCardData } from './lib/cards.js';
 
 const cardsRoot = document.getElementById('cards');
 const throughputChart = document.getElementById('throughputChart');
@@ -62,19 +63,12 @@ function stopPolling() {
 }
 
 function renderCards(totals) {
-  const cards = [
-    ['Agents', totals.agents],
-    ['Total Events', totals.total],
-    ['Total Tokens', totals.tokenTotal || 0],
-    ['OK', totals.ok],
-    ['Warning', totals.warning],
-    ['Error', totals.error]
-  ];
+  const cards = buildCardData(totals, numberFmt);
 
   cardsRoot.innerHTML = cards
     .map(
       ([label, value]) =>
-        `<article class="card"><div class="label">${label}</div><div class="value">${numberFmt.format(value || 0)}</div></article>`
+        `<article class="card"><div class="label">${label}</div><div class="value">${value}</div></article>`
     )
     .join('');
 }
