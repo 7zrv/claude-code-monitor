@@ -1,3 +1,5 @@
+import { recalcWorkflow } from './lib/workflow.js';
+
 const cardsRoot = document.getElementById('cards');
 const throughputChart = document.getElementById('throughputChart');
 const throughputTooltip = document.getElementById('throughputTooltip');
@@ -394,25 +396,23 @@ function renderGraphs(events = []) {
   renderTokenTrendChart(events);
 }
 
-function recalcWorkflow(agents = []) {
-  const roleIds = ['lead', 'designer', 'frontend', 'backend'];
-  return roleIds.map((roleId) => {
-    const row = agents.find((agent) => agent.agentId === roleId);
-    if (!row) {
-      return { roleId, active: false, status: 'idle', total: 0, lastEvent: '-', lastSeen: null };
-    }
-
-    const status = row.error > 0 ? 'blocked' : row.warning > 0 ? 'at-risk' : row.total > 0 ? 'running' : 'idle';
-    return {
-      roleId,
-      active: true,
-      status,
-      total: row.total,
-      lastEvent: row.lastEvent,
-      lastSeen: row.lastSeen
-    };
-  });
+function populateAgentFilter(agents = []) {
+  const prev = agentFilter.value;
+  const ids = agents.map((row) => row.agentId);
+  agentFilter.querySelectorAll('option:not([value="all"])').forEach((o) => o.remove());
+  for (const id of ids) {
+    const opt = document.createElement('option');
+    opt.value = id;
+    opt.textContent = id;
+    agentFilter.appendChild(opt);
+  }
+  if (ids.includes(prev) || prev === 'all') {
+    agentFilter.value = prev;
+  } else {
+    agentFilter.value = 'all';
+  }
 }
+
 
 function applyIncrementalEvent(evt) {
   if (!snapshotState) return;
@@ -440,6 +440,7 @@ function applyIncrementalEvent(evt) {
       latencyMs: evt.latencyMs ?? null
     });
     totals.agents = agents.length;
+    populateAgentFilter(agents);
   } else {
     agent.lastSeen = evt.receivedAt;
     agent.total += 1;
@@ -496,6 +497,7 @@ function applyIncrementalEvent(evt) {
 function renderSnapshot(snapshot) {
   snapshotState = snapshot;
   renderCards(snapshot.totals);
+  populateAgentFilter(snapshot.agents || []);
   renderWorkflow(snapshot.workflowProgress || recalcWorkflow(snapshot.agents));
   renderSources(snapshot.sources || []);
   renderAgents(snapshot.agents || []);

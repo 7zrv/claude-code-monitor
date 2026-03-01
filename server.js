@@ -187,12 +187,7 @@ function buildSnapshot() {
     sources,
     recent: state.recent.slice(0, 50),
     alerts: state.alerts.slice(0, 20),
-    workflowProgress: [
-      roleProgressRow('lead'),
-      roleProgressRow('designer'),
-      roleProgressRow('frontend'),
-      roleProgressRow('backend')
-    ]
+    workflowProgress: agentRows.map((row) => roleProgressRow(row.agentId))
   };
 }
 
