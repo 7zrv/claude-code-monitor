@@ -3,13 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Codex Pulse</title>
+    <title>Claude Pulse</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <header class="header">
-      <h1>Codex Pulse</h1>
-      <p>Codex Pulse 실시간 이벤트/상태 모니터링</p>
+      <h1>Claude Pulse</h1>
+      <p>Claude Code 실시간 이벤트/상태 모니터링</p>
       <div class="header-meta">
         <small id="clock"></small>
         <span id="connection" class="status-pill" data-status="reconnecting">reconnecting</span>
@@ -28,8 +28,8 @@
             <div id="throughputTooltip" class="chart-tooltip" hidden></div>
           </article>
           <article class="chart-card">
-            <h3>에이전트별 토큰 추이 (분당)</h3>
-            <svg id="tokenTrendChart" class="token-trend-chart" role="img" aria-label="에이전트별 분당 토큰 사용량 추이 차트" viewBox="0 0 640 220" preserveAspectRatio="none"></svg>
+            <h3>모델별 토큰 추이 (분당)</h3>
+            <svg id="tokenTrendChart" class="token-trend-chart" role="img" aria-label="모델별 분당 토큰 사용량 추이 차트" viewBox="0 0 640 220" preserveAspectRatio="none"></svg>
             <div id="tokenTrendLegend" class="token-legend"></div>
           </article>
         </div>
@@ -41,14 +41,14 @@
       </section>
 
       <section class="panel">
-        <h2>Local Codex Feed</h2>
+        <h2>Local Claude Feed</h2>
         <div class="workflow" id="sources"></div>
       </section>
 
       <section class="panel">
         <div class="panel-head">
-          <h2>Agent 상태</h2>
-          <label for="agentFilter">Role Filter</label>
+          <h2>Model 상태</h2>
+          <label for="agentFilter">Model Filter</label>
           <select id="agentFilter">
             <option value="all">all</option>
           </select>

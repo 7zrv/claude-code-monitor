@@ -288,5 +288,5 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`Codex Pulse listening on http://${HOST}:${PORT}`);
+  console.log(`Claude Pulse listening on http://${HOST}:${PORT}`);
 });
