@@ -1,7 +1,7 @@
 # Improvement Review (2026-02-25)
 
 ## 범위
-- 프로젝트: `Codex Pulse`
+- 프로젝트: `Claude Monitor`
 - 기준일: 2026-02-25
 - 역할: lead, designer, frontend, backend
 
@@ -53,7 +53,7 @@
 ## Backend (기능 개발 에이전트)
 ### 발견된 개선점
 1. 현재 `std::net` 수동 HTTP 파서로 엣지 케이스(대용량/헤더 변형) 대응 한계.
-2. 수집이 폴링 기반(`CODEX_POLL_MS`)이라 완전 실시간이 아님.
+2. 수집이 폴링 기반(`CLAUDE_POLL_MS`)이라 완전 실시간이 아님.
 3. 영속 저장소 부재로 프로세스 재시작 시 히스토리 손실.
 4. 인증/인가가 없어 로컬 외 노출 시 보안 위험.
 

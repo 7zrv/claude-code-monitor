@@ -3,7 +3,7 @@
 version = 4
 
 [[package]]
-name = "codex_pulse"
+name = "claude_code_monitor"
 version = "0.1.0"
 dependencies = [
  "serde",

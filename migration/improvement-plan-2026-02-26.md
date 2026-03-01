@@ -151,7 +151,7 @@ curl -s http://localhost:5050/api/events | grep -o '&lt;img'  # 기대: 매치 �
 | 항목 | 내용 |
 |------|------|
 | 심각도 | **Critical** (기능 장애) |
-| 파일 | `scripts/codex-local-collector.js:245` |
+| 파일 | `scripts/claude-local-collector.js:245` |
 | 수정 내역 | `.split('\\n')` (리터럴 백슬래시+n) → `.split('\n')` (개행 문자)으로 수정 |
 | 담당 | backend |
 
@@ -159,7 +159,7 @@ curl -s http://localhost:5050/api/events | grep -o '&lt;img'  # 기대: 매치 �
 
 **수정:**
 ```js
-// scripts/codex-local-collector.js:245
+// scripts/claude-local-collector.js:245
 // Before
 .split('\\n')
 
@@ -168,7 +168,7 @@ curl -s http://localhost:5050/api/events | grep -o '&lt;img'  # 기대: 매치 �
 ```
 
 **수락 기준:**
-- `npm run collect:codex` 실행 시 기존 history.jsonl에서 최근 N줄이 정상 backfill됨
+- `npm run collect:claude` 실행 시 기존 history.jsonl에서 최근 N줄이 정상 backfill됨
 
 ---
 
@@ -398,7 +398,7 @@ function stopPolling() {
 
 | 항목 | 내용 |
 |------|------|
-| 파일 | `server.js`, `scripts/codex-local-collector.js` |
+| 파일 | `server.js`, `scripts/claude-local-collector.js` |
 | 현상 | Rust 서버와 동일한 로직이 Node.js에 중복 존재. 동시 실행 시 이벤트 중복 수집. Node 서버는 token tracking 미구현으로 기능 패리티 부족 |
 | 수정 방향 | Node 서버와 collector를 `legacy/` 디렉터리로 이동. package.json에서 `start` 스크립트를 Rust로 변경 |
 | 담당 | lead |
@@ -407,7 +407,7 @@ function stopPolling() {
 ```
 legacy/
   server.js          ← 기존 server.js
-  collector.js       ← 기존 scripts/codex-local-collector.js
+  collector.js       ← 기존 scripts/claude-local-collector.js
 ```
 
 ```json
@@ -823,7 +823,7 @@ Phase 완료 판정은 아래 기준을 모두 충족해야 한다:
   curl -s -o /dev/null -w '%{http_code}' 'http://localhost:5050/index.html'          # == 200
   ```
 - XSS 페이로드 POST 후 대시보드에서 스크립트 미실행 (수동 확인)
-- `npm run collect:codex`에서 backfill 정상 동작 확인
+- `npm run collect:claude`에서 backfill 정상 동작 확인
 - Node 서버 `MONITOR_API_KEY` 검증 동작 확인
 
 ### Phase 1 (1~2주)
