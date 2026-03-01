@@ -1,3 +1,5 @@
+export const MODELS = ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5'];
+
 const base = process.env.MONITOR_BASE_URL || 'http://localhost:5050';
 const durationSec = Number(process.env.LOAD_DURATION_SEC || 20);
 const eventsPerSec = Number(process.env.LOAD_EVENTS_PER_SEC || 10);
@@ -10,8 +12,8 @@ function delay(ms) {
 async function postEvent(i) {
   const status = i % 15 === 0 ? 'error' : i % 6 === 0 ? 'warning' : 'ok';
   const payload = {
-    agentId: ['lead', 'designer', 'frontend', 'backend'][i % 4],
-    event: i % 2 === 0 ? 'tool_call' : 'task_completed',
+    agentId: MODELS[i % MODELS.length],
+    event: i % 2 === 0 ? 'tool_call' : 'session_end',
     status,
     message: `load-test-${i}`,
     metadata: { source: 'load_test' }
@@ -61,7 +63,9 @@ async function main() {
   console.log(JSON.stringify(result, null, 2));
 }
 
-main().catch((err) => {
-  console.error(`[load-test] failed: ${err.message}`);
-  process.exit(1);
-});
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((err) => {
+    console.error(`[load-test] failed: ${err.message}`);
+    process.exit(1);
+  });
+}
