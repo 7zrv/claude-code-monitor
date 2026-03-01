@@ -44,7 +44,7 @@ function createWindow() {
     height: 840,
     minWidth: 980,
     minHeight: 700,
-    title: 'Codex Pulse',
+    title: 'Claude Pulse',
     autoHideMenuBar: true,
     webPreferences: {
       contextIsolation: true,

@@ -313,7 +313,7 @@ function renderTokenTrendChart(events = []) {
 
   if (!agents.length) {
     tokenTrendChart.innerHTML = `
-      <title>에이전트별 분당 토큰 사용량 추이 차트</title>
+      <title>모델별 분당 토큰 사용량 추이 차트</title>
       <line x1="36" y1="190" x2="620" y2="190" stroke="rgb(226 109 92 / 45%)" stroke-width="1" />
     `;
     tokenTrendLegend.innerHTML = '<span>No token data</span>';
@@ -354,7 +354,7 @@ function renderTokenTrendChart(events = []) {
     .join('');
 
   tokenTrendChart.innerHTML = `
-    <title>에이전트별 분당 토큰 사용량 추이 차트</title>
+    <title>모델별 분당 토큰 사용량 추이 차트</title>
     <line x1="${width.left}" y1="${height.bottom}" x2="${width.right}" y2="${height.bottom}" stroke="rgb(226 109 92 / 45%)" stroke-width="1" />
     <line x1="${width.left}" y1="${height.top}" x2="${width.left}" y2="${height.bottom}" stroke="rgb(226 109 92 / 30%)" stroke-width="1" />
     <line x1="${width.left}" y1="${midY}" x2="${width.right}" y2="${midY}" stroke="rgb(226 109 92 / 15%)" stroke-width="1" stroke-dasharray="4 4" />
