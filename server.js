@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { extname, join } from 'node:path';
+import { buildSnapshot } from './server-logic.js';
 
 const PORT = process.env.PORT || 5050;
 const HOST = process.env.HOST || '127.0.0.1';
@@ -134,62 +135,6 @@ function appendEvent(evt) {
   }
 }
 
-function roleProgressRow(roleId) {
-  const row = state.byAgent.get(roleId);
-  if (!row) {
-    return {
-      roleId,
-      active: false,
-      status: 'idle',
-      total: 0,
-      lastEvent: '-',
-      lastSeen: null
-    };
-  }
-
-  const status =
-    row.error > 0 ? 'blocked' :
-    row.warning > 0 ? 'at-risk' :
-    row.total > 0 ? 'running' :
-    'idle';
-
-  return {
-    roleId,
-    active: true,
-    status,
-    total: row.total,
-    lastEvent: row.lastEvent,
-    lastSeen: row.lastSeen
-  };
-}
-
-function buildSnapshot() {
-  const agentRows = [...state.byAgent.values()].sort((a, b) =>
-    a.agentId.localeCompare(b.agentId)
-  );
-
-  const totals = agentRows.reduce(
-    (acc, row) => {
-      acc.total += row.total;
-      acc.ok += row.ok;
-      acc.warning += row.warning;
-      acc.error += row.error;
-      return acc;
-    },
-    { agents: agentRows.length, total: 0, ok: 0, warning: 0, error: 0 }
-  );
-  const sources = [...state.bySource.values()].sort((a, b) => a.source.localeCompare(b.source));
-
-  return {
-    generatedAt: new Date().toISOString(),
-    totals,
-    agents: agentRows,
-    sources,
-    recent: state.recent.slice(0, 50),
-    alerts: state.alerts.slice(0, 20),
-    workflowProgress: agentRows.map((row) => roleProgressRow(row.agentId))
-  };
-}
 
 async function serveStatic(pathname, res) {
   const safePath = pathname === '/' ? '/index.html' : pathname;
@@ -226,7 +171,7 @@ const server = createServer(async (req, res) => {
 
   if (req.method === 'GET' && url.pathname === '/api/events') {
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify(buildSnapshot()));
+    res.end(JSON.stringify(buildSnapshot(state)));
     return;
   }
 
@@ -243,7 +188,7 @@ const server = createServer(async (req, res) => {
       connection: 'keep-alive'
     });
 
-    res.write(`data: ${JSON.stringify({ type: 'snapshot', payload: buildSnapshot() })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'snapshot', payload: buildSnapshot(state) })}\n\n`);
     state.clients.add(res);
 
     const keepAlive = setInterval(() => {
