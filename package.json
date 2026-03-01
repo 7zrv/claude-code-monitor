@@ -16,7 +16,7 @@
     "test:js": "node --test 'public/__tests__/**/*.test.js'",
     "test:collector": "node --test scripts/__tests__/claude-local-collector.test.js",
     "test:server": "node --test '__tests__/server-logic.test.js'",
-    "check": "node --check server.js && node --check server-logic.js && node --check simulator.js && node --check scripts/frontend-load-test.js && node --check scripts/claude-local-collector.js && node --check scripts/__tests__/claude-local-collector.test.js && node --check public/app.js && node --check public/lib/workflow.js && node --check desktop/main.js"
+    "check": "node --check server.js && node --check server-logic.js && node --check simulator.js && node --check scripts/frontend-load-test.js && node --check scripts/claude-local-collector.js && node --check scripts/__tests__/claude-local-collector.test.js && node --check public/app.js && node --check public/lib/workflow.js && node --check public/lib/cards.js && node --check public/__tests__/cards.test.js && node --check desktop/main.js"
   },
   "devDependencies": {
     "electron": "^35.0.0"
