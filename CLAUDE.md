@@ -18,8 +18,7 @@ src/            Rust 백엔드
 server.js       Node.js SSE 서버
 public/         프론트엔드 정적 파일
 desktop/        Electron 앱
-scripts/        유틸리티 스크립트 (dispatch, collector, load test)
-agents/         에이전트 설정
+scripts/        유틸리티 스크립트 (collector, load test)
 migration/      마이그레이션 파일
 .github/        CI, 이슈/PR 템플릿
 .claude/skills/ Claude Code 스킬 (아래 워크플로우 참조)
