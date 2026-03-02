@@ -86,13 +86,25 @@ function appendEvent(evt) {
     warning: 0,
     error: 0,
     lastEvent: evt.event,
-    latencyMs: null
+    latencyMs: null,
+    model: '',
+    isSidechain: false,
+    sessionId: '',
+    tokenTotal: 0,
+    costUsd: 0
   };
 
   prev.lastSeen = evt.receivedAt;
   prev.total += 1;
   prev.lastEvent = evt.event;
   prev.latencyMs = evt.latencyMs;
+  if (evt.metadata?.model) prev.model = evt.metadata.model;
+  if (evt.metadata?.isSidechain != null) prev.isSidechain = evt.metadata.isSidechain;
+  if (evt.metadata?.sessionId) prev.sessionId = evt.metadata.sessionId;
+  prev.tokenTotal = (prev.tokenTotal || 0) + (evt.metadata?.tokenUsage?.totalTokens || 0);
+  if (evt.event === 'cost_update') {
+    prev.costUsd = (prev.costUsd || 0) + (evt.metadata?.costDelta || 0);
+  }
 
   if (evt.status === 'error') prev.error += 1;
   else if (evt.status === 'warning') prev.warning += 1;

@@ -132,6 +132,8 @@ function sessionLineToEvent(line) {
 
   const msgType = parsed.type || '';
   const sessionId = parsed.sessionId || '';
+  const isSidechain = parsed.isSidechain ?? false;
+  const agentId = parsed.agentId || `lead-${sessionId.slice(0, 8)}`;
   const timestamp = parsed.timestamp || new Date().toISOString();
 
   if (msgType === 'user') {
@@ -145,14 +147,15 @@ function sessionLineToEvent(line) {
 
     return [
       {
-        agentId: 'lead',
+        agentId,
         event: 'user_message',
         status: 'ok',
         message: content.slice(0, 120),
         timestamp,
         metadata: {
           source: 'claude_session',
-          sessionId
+          sessionId,
+          isSidechain
         }
       }
     ];
@@ -169,7 +172,7 @@ function sessionLineToEvent(line) {
 
       if (itemType === 'text' && item.text) {
         events.push({
-          agentId: 'lead',
+          agentId,
           event: 'assistant_message',
           status: 'ok',
           message: String(item.text).slice(0, 120),
@@ -177,7 +180,8 @@ function sessionLineToEvent(line) {
           metadata: {
             source: 'claude_session',
             sessionId,
-            model
+            model,
+            isSidechain
           }
         });
       }
@@ -185,7 +189,7 @@ function sessionLineToEvent(line) {
       if (itemType === 'tool_use') {
         const inputStr = JSON.stringify(item.input || {});
         events.push({
-          agentId: 'lead',
+          agentId,
           event: 'tool_call',
           status: 'ok',
           message: item.name || 'unknown_tool',
@@ -194,6 +198,7 @@ function sessionLineToEvent(line) {
             source: 'claude_session',
             sessionId,
             model,
+            isSidechain,
             toolInput: inputStr.length > 512 ? { _truncated: true } : (item.input || {})
           }
         });
@@ -213,7 +218,7 @@ function sessionLineToEvent(line) {
 
       if (total > 0) {
         events.push({
-          agentId: 'lead',
+          agentId,
           event: 'token_usage',
           status: 'ok',
           message: `tokens +${total}`,
@@ -222,6 +227,7 @@ function sessionLineToEvent(line) {
             source: 'claude_session',
             sessionId,
             model,
+            isSidechain,
             tokenUsage: {
               inputTokens,
               outputTokens,
@@ -260,6 +266,19 @@ async function walkJsonlFiles(dir) {
     for (const subEntry of subEntries) {
       if (subEntry.isFile() && subEntry.name.endsWith('.jsonl')) {
         result.push(join(subDir, subEntry.name));
+      } else if (subEntry.isDirectory() && subEntry.name === 'subagents') {
+        const agentDir = join(subDir, subEntry.name);
+        let agentEntries;
+        try {
+          agentEntries = await readdir(agentDir, { withFileTypes: true });
+        } catch {
+          continue;
+        }
+        for (const agentEntry of agentEntries) {
+          if (agentEntry.isFile() && agentEntry.name.endsWith('.jsonl')) {
+            result.push(join(agentDir, agentEntry.name));
+          }
+        }
       }
     }
   }

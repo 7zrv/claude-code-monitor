@@ -75,6 +75,21 @@ describe('buildSnapshot', () => {
     assert.equal(snap.workflowProgress[1].roleId, 'frontend');
   });
 
+  it('aggregates tokenTotal and costTotalUsd in totals', () => {
+    const state = {
+      recent: [],
+      alerts: [],
+      byAgent: new Map([
+        ['a1', { agentId: 'a1', lastSeen: '', total: 5, ok: 5, warning: 0, error: 0, lastEvent: '', latencyMs: null, tokenTotal: 1000, costUsd: 0.5 }],
+        ['a2', { agentId: 'a2', lastSeen: '', total: 3, ok: 3, warning: 0, error: 0, lastEvent: '', latencyMs: null, tokenTotal: 500, costUsd: 0.2 }]
+      ]),
+      bySource: new Map()
+    };
+    const snap = buildSnapshot(state);
+    assert.equal(snap.totals.tokenTotal, 1500);
+    assert.ok(Math.abs(snap.totals.costTotalUsd - 0.7) < 1e-9);
+  });
+
   it('sorts workflowProgress alphabetically by agent key', () => {
     const state = {
       recent: [],

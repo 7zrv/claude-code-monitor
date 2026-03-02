@@ -1,6 +1,7 @@
 import { recalcWorkflow } from './lib/workflow.js';
 import { buildCardData } from './lib/cards.js';
 import { colorForIndex } from './lib/palette.js';
+import { buildAgentTree } from './lib/agent-tree.js';
 
 const cardsRoot = document.getElementById('cards');
 const throughputChart = document.getElementById('throughputChart');
@@ -118,29 +119,44 @@ function renderSources(rows = []) {
     .join('');
 }
 
+function agentRowHtml(row, isChild, isLastChild) {
+  const prefix = isChild ? '<span class="tree-branch"></span>' : '';
+  const classes = [isChild && 'tree-child', isLastChild && 'tree-last'].filter(Boolean).join(' ');
+  const cls = classes ? ` class="${classes}"` : '';
+  const modelBadge = row.model
+    ? `<span class="model-badge">${escapeHtml(row.model)}</span>`
+    : '-';
+  return `
+    <tr${cls}>
+      <td>${prefix}<span class="badge">${escapeHtml(row.agentId)}</span></td>
+      <td>${modelBadge}</td>
+      <td>${new Date(row.lastSeen).toLocaleTimeString()}</td>
+      <td>${Number(row.total) || 0}</td>
+      <td>${Number(row.ok) || 0}</td>
+      <td>${Number(row.warning) || 0}</td>
+      <td>${Number(row.error) || 0}</td>
+      <td>${numberFmt.format(row.tokenTotal || 0)}</td>
+      <td>${escapeHtml(row.lastEvent)}</td>
+      <td>${row.latencyMs == null ? '-' : `${row.latencyMs} ms`}</td>
+    </tr>`;
+}
+
 function renderAgents(agents) {
   const filtered =
     agentFilter.value === 'all'
       ? agents
       : agents.filter((row) => row.agentId === agentFilter.value);
 
-  agentsBody.innerHTML = filtered
-    .map(
-      (row) => `
-      <tr>
-        <td><span class="badge">${escapeHtml(row.agentId)}</span></td>
-        <td>${new Date(row.lastSeen).toLocaleTimeString()}</td>
-        <td>${Number(row.total) || 0}</td>
-        <td>${Number(row.ok) || 0}</td>
-        <td>${Number(row.warning) || 0}</td>
-        <td>${Number(row.error) || 0}</td>
-        <td>${numberFmt.format(row.tokenTotal || 0)}</td>
-        <td>${escapeHtml(row.lastEvent)}</td>
-        <td>${row.latencyMs == null ? '-' : `${row.latencyMs} ms`}</td>
-      </tr>
-    `
-    )
-    .join('');
+  const tree = buildAgentTree(filtered);
+  const rows = [];
+  for (const node of tree) {
+    rows.push(agentRowHtml(node.agent, false, false));
+    for (let i = 0; i < node.children.length; i++) {
+      const isLast = i === node.children.length - 1;
+      rows.push(agentRowHtml(node.children[i], true, isLast));
+    }
+  }
+  agentsBody.innerHTML = rows.join('');
 }
 
 function normalizeText(v) {
@@ -413,10 +429,10 @@ function populateAgentFilter(agents = []) {
   const prev = agentFilter.value;
   const ids = agents.map((row) => row.agentId);
   agentFilter.querySelectorAll('option:not([value="all"])').forEach((o) => o.remove());
-  for (const id of ids) {
+  for (const agent of agents) {
     const opt = document.createElement('option');
-    opt.value = id;
-    opt.textContent = id;
+    opt.value = agent.agentId;
+    opt.textContent = agent.isSidechain ? `\u21b3 ${agent.agentId}` : agent.agentId;
     agentFilter.appendChild(opt);
   }
   if (ids.includes(prev) || prev === 'all') {
@@ -426,6 +442,14 @@ function populateAgentFilter(agents = []) {
   }
 }
 
+
+function extractAgentMeta(evt) {
+  return {
+    model: evt.model || evt.metadata?.model || '',
+    isSidechain: evt.isSidechain ?? evt.metadata?.isSidechain ?? false,
+    sessionId: evt.sessionId || evt.metadata?.sessionId || ''
+  };
+}
 
 function applyIncrementalEvent(evt) {
   if (!snapshotState) return;
@@ -438,6 +462,7 @@ function applyIncrementalEvent(evt) {
   else if (evt.status === 'warning') totals.warning += 1;
   else totals.ok += 1;
 
+  const meta = extractAgentMeta(evt);
   const agents = snapshotState.agents;
   const agent = agents.find((row) => row.agentId === evt.agentId);
   if (!agent) {
@@ -450,7 +475,10 @@ function applyIncrementalEvent(evt) {
       error: evt.status === 'error' ? 1 : 0,
       tokenTotal: evtTokenTotal,
       lastEvent: evt.event,
-      latencyMs: evt.latencyMs ?? null
+      latencyMs: evt.latencyMs ?? null,
+      model: meta.model,
+      isSidechain: meta.isSidechain,
+      sessionId: meta.sessionId
     });
     totals.agents = agents.length;
     populateAgentFilter(agents);
@@ -460,6 +488,9 @@ function applyIncrementalEvent(evt) {
     agent.lastEvent = evt.event;
     agent.latencyMs = evt.latencyMs ?? null;
     agent.tokenTotal = (agent.tokenTotal || 0) + evtTokenTotal;
+    if (meta.model) agent.model = meta.model;
+    if (meta.isSidechain) agent.isSidechain = meta.isSidechain;
+    if (meta.sessionId) agent.sessionId = meta.sessionId;
     if (evt.status === 'error') agent.error += 1;
     else if (evt.status === 'warning') agent.warning += 1;
     else agent.ok += 1;

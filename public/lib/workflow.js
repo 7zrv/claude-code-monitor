@@ -7,7 +7,8 @@ export function recalcWorkflow(agents = []) {
       status,
       total: row.total,
       lastEvent: row.lastEvent,
-      lastSeen: row.lastSeen
+      lastSeen: row.lastSeen,
+      model: row.model || ''
     };
   });
 }

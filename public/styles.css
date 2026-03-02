@@ -514,3 +514,28 @@ tbody tr:hover td {
     min-width: unset;
   }
 }
+
+/* ── Agent tree styles ── */
+tr.tree-child td:first-child {
+  padding-left: 28px;
+}
+
+.tree-branch::before {
+  content: "\251C\2500";
+  color: var(--border);
+  margin-right: 4px;
+  font-size: 12px;
+}
+
+tr.tree-last .tree-branch::before {
+  content: "\2514\2500";
+}
+
+.model-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  background: var(--border-subtle);
+  color: var(--warm-text);
+}
