@@ -56,4 +56,35 @@ describe('buildCardData', () => {
     assert.equal(cards[3][1], '0');   // OK
     assert.equal(cards[6][1], '0.0000'); // Cost (USD)
   });
+
+  it('assigns ok type to OK card', () => {
+    const totals = { agents: 1, total: 1, tokenTotal: 0, ok: 1, warning: 0, error: 0, costTotalUsd: 0 };
+    const cards = buildCardData(totals, numberFmt);
+    const okCard = cards.find(([label]) => label === 'OK');
+    assert.equal(okCard[2], 'ok');
+  });
+
+  it('assigns warning type to Warning card', () => {
+    const totals = { agents: 1, total: 1, tokenTotal: 0, ok: 0, warning: 1, error: 0, costTotalUsd: 0 };
+    const cards = buildCardData(totals, numberFmt);
+    const warningCard = cards.find(([label]) => label === 'Warning');
+    assert.equal(warningCard[2], 'warning');
+  });
+
+  it('assigns error type to Error card', () => {
+    const totals = { agents: 1, total: 1, tokenTotal: 0, ok: 0, warning: 0, error: 1, costTotalUsd: 0 };
+    const cards = buildCardData(totals, numberFmt);
+    const errorCard = cards.find(([label]) => label === 'Error');
+    assert.equal(errorCard[2], 'error');
+  });
+
+  it('assigns neutral type to non-status cards', () => {
+    const totals = { agents: 1, total: 5, tokenTotal: 100, ok: 3, warning: 1, error: 1, costTotalUsd: 1.5 };
+    const cards = buildCardData(totals, numberFmt);
+    const neutralLabels = ['Agents', 'Total Events', 'Total Tokens', 'Cost (USD)'];
+    for (const label of neutralLabels) {
+      const card = cards.find(([l]) => l === label);
+      assert.equal(card[2], 'neutral', `${label} should have neutral type`);
+    }
+  });
 });

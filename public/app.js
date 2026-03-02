@@ -1,5 +1,6 @@
 import { recalcWorkflow } from './lib/workflow.js';
 import { buildCardData } from './lib/cards.js';
+import { colorForIndex } from './lib/palette.js';
 
 const cardsRoot = document.getElementById('cards');
 const throughputChart = document.getElementById('throughputChart');
@@ -67,8 +68,8 @@ function renderCards(totals) {
 
   cardsRoot.innerHTML = cards
     .map(
-      ([label, value]) =>
-        `<article class="card"><div class="label">${label}</div><div class="value">${value}</div></article>`
+      ([label, value, type]) =>
+        `<article class="card card--${type}"><div class="label">${label}</div><div class="value">${value}</div></article>`
     )
     .join('');
 }
@@ -325,15 +326,13 @@ function renderTokenTrendChart(events = []) {
   const max = Math.max(1, ...Object.values(seriesByAgent).flat());
   const midY = height.top + (height.bottom - height.top) / 2;
   const slotWidth = (width.right - width.left) / (buckets.length - 1 || 1);
-  const dashPatterns = ['0', '6 3', '2 2', '10 4', '1 3'];
   const lineWidths = [2.6, 2.2, 2, 1.8, 1.6];
 
   const lineSvg = agents
     .map((agent, idx) => {
       const d = pathForSeries(seriesByAgent[agent], width, height, max);
-      const dash = dashPatterns[idx % dashPatterns.length];
       const strokeWidth = lineWidths[idx % lineWidths.length];
-      return `<path d="${d}" fill="none" stroke="rgb(226 109 92 / 82%)" stroke-width="${strokeWidth}" stroke-dasharray="${dash}" />`;
+      return `<path d="${d}" fill="none" stroke="${colorForIndex(idx)}" stroke-width="${strokeWidth}" />`;
     })
     .join('');
 
@@ -343,7 +342,7 @@ function renderTokenTrendChart(events = []) {
       const last = values[values.length - 1] || 0;
       const x = width.right - 2;
       const y = height.bottom - (last / max) * (height.bottom - height.top);
-      return `<text x="${x}" y="${Math.max(height.top + 8, y - idx * 2).toFixed(2)}" text-anchor="end" font-size="10" fill="rgb(226 109 92 / 90%)">${escapeHtml(agent)}</text>`;
+      return `<text x="${x}" y="${Math.max(height.top + 8, y - idx * 2).toFixed(2)}" text-anchor="end" font-size="10" fill="${colorForIndex(idx)}">${escapeHtml(agent)}</text>`;
     })
     .join('');
 
@@ -369,13 +368,13 @@ function renderTokenTrendChart(events = []) {
 
   tokenTrendLegend.innerHTML = agents
     .map((agent, idx) => {
-      const dash = dashPatterns[idx % dashPatterns.length];
       const latest = seriesByAgent[agent][seriesByAgent[agent].length - 1] || 0;
       const strokeWidth = lineWidths[idx % lineWidths.length];
+      const color = colorForIndex(idx);
       return `
-        <span class="legend-item" title="dash:${dash}">
+        <span class="legend-item">
           <svg class="legend-line" viewBox="0 0 22 8" preserveAspectRatio="none">
-            <line x1="0" y1="4" x2="22" y2="4" stroke="rgb(226 109 92 / 90%)" stroke-width="${strokeWidth}" stroke-dasharray="${dash}" />
+            <line x1="0" y1="4" x2="22" y2="4" stroke="${color}" stroke-width="${strokeWidth}" />
           </svg>
           <strong>${escapeHtml(agent)}</strong>
           <em>${numberFmt.format(latest)} tok/min</em>
