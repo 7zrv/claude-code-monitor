@@ -18,40 +18,9 @@ model: sonnet
 
 ## Instructions
 
-1. 브랜치 최신화
-   - `git fetch origin main`으로 최신 main을 가져온다
-   - `git rebase origin/main`으로 현재 브랜치를 최신화한다
-   - 충돌이 발생하면 `git rebase --abort`로 롤백하고, 사용자에게 충돌 파일 목록을 안내한 뒤 중단한다
-2. Ensure the branch is pushed to remote. If not, push with `git push -u origin <branch>`
-3. Analyze all commits from `main` to `HEAD` — not just the latest commit
-4. Create a PR using `gh pr create` with the following format:
+PR 생성 규칙은 `.claude/skills/shared/pr-template.md`를 따른다.
+해당 파일을 Read로 읽은 뒤 기준에 따라 PR을 생성한다.
 
-```bash
-gh pr create --title "<title>" --body "$(cat <<'EOF'
-## Summary
-<1-3 bullet points summarizing the changes>
-
-## Changes
-<list of key changes>
-
-## Related Issue
-Closes #<issue-number>
-
-## Test Plan
-- [ ] `cargo fmt --check` pass
-- [ ] `cargo clippy -- -D warnings` pass
-- [ ] `cargo test` pass
-- [ ] `npm run check` pass
-- [ ] Manual verification of related functionality
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-EOF
-)"
-```
-
-5. 관련 이슈 번호 결정:
-   - `$ARGUMENTS`가 있으면 해당 값을 사용
-   - 없으면 브랜치명 끝의 숫자를 이슈 번호로 추출 (예: `feat/add-cache-18` → `18`)
-   - `Closes #<이슈번호>`를 PR 본문에 포함
-6. Keep the PR title under 70 characters and follow conventional commit style
-7. Return the PR URL when done
+추가 사항:
+- `$ARGUMENTS`가 있으면 관련 이슈 번호로 사용한다
+- `main` 대비 모든 커밋을 분석하여 PR 내용을 작성한다 — 최신 커밋만이 아닌 전체 커밋을 대상으로 한다

@@ -4,7 +4,7 @@ description: Review a pull request and provide feedback
 argument-hint: "[PR 번호]"
 disable-model-invocation: true
 allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion
-model: opus
+model: sonnet
 ---
 
 # PR 리뷰
