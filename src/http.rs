@@ -1,17 +1,15 @@
-use serde_json::{json, Value};
-use std::collections::HashMap;
+use serde_json::json;
 use std::io::{Read, Write};
 use std::net::TcpStream;
-use std::sync::atomic::Ordering;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::Duration;
 
 #[cfg(test)]
 use crate::state::broadcast_sse;
-use crate::state::{append_event, build_snapshot};
-use crate::types::{App, Event, ParsedRequest};
-use crate::utils::{bytes_response, content_type_for, json_response, now_iso, status_norm};
+use crate::state::build_snapshot;
+use crate::types::{App, ParsedRequest};
+use crate::utils::{bytes_response, content_type_for, json_response, now_iso};
 
 pub fn parse_request(stream: &mut TcpStream) -> Option<ParsedRequest> {
     let timeout_secs = std::env::var("HTTP_READ_TIMEOUT_SEC")
@@ -47,103 +45,7 @@ pub fn parse_request(stream: &mut TcpStream) -> Option<ParsedRequest> {
         path = path[..idx].to_string();
     }
 
-    let mut content_length = 0usize;
-    let mut headers = HashMap::new();
-    for line in lines {
-        let lower = line.to_lowercase();
-        if lower.starts_with("content-length:") {
-            let v = line.split(':').nth(1).unwrap_or("0").trim();
-            content_length = v.parse::<usize>().unwrap_or(0);
-        }
-        if let Some((k, v)) = line.split_once(':') {
-            headers.insert(k.trim().to_lowercase(), v.trim().to_string());
-        }
-    }
-    if headers
-        .get("transfer-encoding")
-        .map(|v| v.to_lowercase().contains("chunked"))
-        .unwrap_or(false)
-    {
-        return None;
-    }
-
-    if content_length > 1024 * 1024 {
-        return None;
-    }
-
-    let mut body = data[headers_end..].to_vec();
-    while body.len() < content_length {
-        let n = stream.read(&mut buf).ok()?;
-        if n == 0 {
-            break;
-        }
-        body.extend_from_slice(&buf[..n]);
-    }
-
-    Some(ParsedRequest {
-        method,
-        path,
-        headers,
-        body,
-    })
-}
-
-pub fn normalize_incoming(payload: &Value, app: &App) -> Event {
-    let now = now_iso();
-    let ts = payload
-        .get("timestamp")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| now.clone());
-
-    let status = payload
-        .get("status")
-        .and_then(|v| v.as_str())
-        .map(status_norm)
-        .unwrap_or_else(|| "ok".to_string());
-
-    let meta = payload
-        .get("metadata")
-        .cloned()
-        .unwrap_or_else(|| json!({}));
-
-    Event {
-        id: format!("e{}", app.event_seq.fetch_add(1, Ordering::Relaxed)),
-        agent_id: payload
-            .get("agentId")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown-agent")
-            .to_string(),
-        event: payload
-            .get("event")
-            .and_then(|v| v.as_str())
-            .unwrap_or("heartbeat")
-            .to_string(),
-        status,
-        latency_ms: payload.get("latencyMs").and_then(|v| v.as_i64()),
-        message: payload
-            .get("message")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
-        model: meta
-            .get("model")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
-        is_sidechain: meta
-            .get("isSidechain")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false),
-        session_id: meta
-            .get("sessionId")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
-        metadata: meta,
-        timestamp: ts,
-        received_at: now,
-    }
+    Some(ParsedRequest { method, path })
 }
 
 pub fn serve_static(app: &App, path: &str) -> Vec<u8> {
@@ -261,35 +163,6 @@ pub fn handle_client(mut stream: TcpStream, app: App) {
                 .push(tx);
             handle_sse(stream, rx, snapshot);
         }
-        ("POST", "/api/events") => {
-            if let Some(expected) = &app.api_key {
-                let provided = req.headers.get("x-api-key").cloned().unwrap_or_default();
-                if &provided != expected {
-                    let _ = stream.write_all(&json_response(
-                        "401 Unauthorized",
-                        &json!({ "error": "Unauthorized" }).to_string(),
-                    ));
-                    return;
-                }
-            }
-
-            let payload: Value = match serde_json::from_slice(&req.body) {
-                Ok(v) => v,
-                Err(_) => {
-                    let _ = stream.write_all(&json_response(
-                        "400 Bad Request",
-                        &json!({ "error": "Invalid JSON" }).to_string(),
-                    ));
-                    return;
-                }
-            };
-
-            let evt = normalize_incoming(&payload, &app);
-            let id = evt.id.clone();
-            append_event(&app, evt);
-            let body = json!({ "accepted": true, "id": id }).to_string();
-            let _ = stream.write_all(&json_response("202 Accepted", &body));
-        }
         ("GET", _) => {
             let resp = serve_static(&app, &req.path);
             let _ = stream.write_all(&resp);
@@ -307,7 +180,6 @@ pub fn handle_client(mut stream: TcpStream, app: App) {
 mod tests {
     use super::*;
     use crate::types::State;
-    use serde_json::json;
     use std::io::Write;
     use std::net::TcpListener;
     use std::path::PathBuf;
@@ -324,7 +196,6 @@ mod tests {
             sse_clients: Arc::new(Mutex::new(Vec::new())),
             event_seq: Arc::new(AtomicU64::new(1)),
             public_dir: Arc::new(path),
-            api_key: None,
         }
     }
 
@@ -357,66 +228,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
-    }
-
-    #[test]
-    fn test_normalize_incoming_full_payload() {
-        let app = make_test_app();
-        let payload = json!({
-            "agentId": "bot-1",
-            "event": "task_complete",
-            "status": "ok",
-            "latencyMs": 123,
-            "message": "done",
-            "timestamp": "2025-06-01T00:00:00Z",
-            "metadata": { "source": "test" }
-        });
-        let evt = normalize_incoming(&payload, &app);
-        assert_eq!(evt.agent_id, "bot-1");
-        assert_eq!(evt.event, "task_complete");
-        assert_eq!(evt.status, "ok");
-        assert_eq!(evt.latency_ms, Some(123));
-        assert_eq!(evt.message, "done");
-        assert_eq!(evt.timestamp, "2025-06-01T00:00:00Z");
-        assert!(evt.id.starts_with('e'));
-    }
-
-    #[test]
-    fn test_normalize_incoming_missing_fields() {
-        let app = make_test_app();
-        let payload = json!({});
-        let evt = normalize_incoming(&payload, &app);
-        assert_eq!(evt.agent_id, "unknown-agent");
-        assert_eq!(evt.event, "heartbeat");
-        assert_eq!(evt.status, "ok");
-        assert_eq!(evt.latency_ms, None);
-        assert_eq!(evt.message, "");
-    }
-
-    #[test]
-    fn test_normalize_incoming_status_normalized() {
-        let app = make_test_app();
-        let payload = json!({ "status": "ERROR" });
-        let evt = normalize_incoming(&payload, &app);
-        assert_eq!(evt.status, "error");
-    }
-
-    #[test]
-    fn test_normalize_incoming_extracts_model_from_metadata() {
-        let app = make_test_app();
-        let payload = json!({
-            "agentId": "agent-x",
-            "event": "test",
-            "metadata": {
-                "model": "claude-opus-4-6",
-                "isSidechain": true,
-                "sessionId": "sess123"
-            }
-        });
-        let evt = normalize_incoming(&payload, &app);
-        assert_eq!(evt.model, "claude-opus-4-6");
-        assert!(evt.is_sidechain);
-        assert_eq!(evt.session_id, "sess123");
     }
 
     #[test]
@@ -507,67 +318,6 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_client_post_events_valid() {
-        let (addr, handle) = spawn_test_server(make_test_app());
-        let body = r#"{"agentId":"a1","event":"test","status":"ok"}"#;
-        let req = format!(
-            "POST /api/events HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\n\r\n{}",
-            body.len(),
-            body
-        );
-        let resp = http_request(&addr, &req);
-        handle.join().unwrap();
-        assert!(resp.contains("202 Accepted"));
-        assert!(resp.contains("\"accepted\":true"));
-    }
-
-    #[test]
-    fn test_handle_client_post_events_invalid_json() {
-        let (addr, handle) = spawn_test_server(make_test_app());
-        let body = "not json";
-        let req = format!(
-            "POST /api/events HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\n\r\n{}",
-            body.len(),
-            body
-        );
-        let resp = http_request(&addr, &req);
-        handle.join().unwrap();
-        assert!(resp.contains("400 Bad Request"));
-    }
-
-    #[test]
-    fn test_handle_client_post_events_auth_required() {
-        let mut app = make_test_app();
-        app.api_key = Some("secret123".to_string());
-        let (addr, handle) = spawn_test_server(app);
-        let body = r#"{"agentId":"a1"}"#;
-        let req = format!(
-            "POST /api/events HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\nX-Api-Key: wrong\r\n\r\n{}",
-            body.len(),
-            body
-        );
-        let resp = http_request(&addr, &req);
-        handle.join().unwrap();
-        assert!(resp.contains("401 Unauthorized"));
-    }
-
-    #[test]
-    fn test_handle_client_post_events_auth_success() {
-        let mut app = make_test_app();
-        app.api_key = Some("secret123".to_string());
-        let (addr, handle) = spawn_test_server(app);
-        let body = r#"{"agentId":"a1"}"#;
-        let req = format!(
-            "POST /api/events HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\nX-Api-Key: secret123\r\n\r\n{}",
-            body.len(),
-            body
-        );
-        let resp = http_request(&addr, &req);
-        handle.join().unwrap();
-        assert!(resp.contains("202 Accepted"));
-    }
-
-    #[test]
     fn test_handle_client_static_file() {
         let dir = unique_tmp_dir("hc_static");
         {
@@ -633,6 +383,17 @@ mod tests {
         broadcast_sse(&app_ref, "trigger_exit".to_string());
 
         handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_handle_client_post_events_rejected() {
+        let (addr, handle) = spawn_test_server(make_test_app());
+        let resp = http_request(
+            &addr,
+            "POST /api/events HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        );
+        handle.join().unwrap();
+        assert!(resp.contains("405 Method Not Allowed"));
     }
 
     #[test]

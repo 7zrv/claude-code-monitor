@@ -26,14 +26,6 @@ pub fn bytes_response(code: &str, body: &[u8], content_type: &str) -> Vec<u8> {
     [header.as_bytes(), body].concat()
 }
 
-pub fn status_norm(status: &str) -> String {
-    match status.to_lowercase().as_str() {
-        "error" => "error".to_string(),
-        "warning" => "warning".to_string(),
-        _ => "ok".to_string(),
-    }
-}
-
 pub fn content_type_for(path: &str) -> &'static str {
     if path.ends_with(".html") {
         "text/html; charset=utf-8"
@@ -58,28 +50,6 @@ mod tests {
         assert!(!result.is_empty());
         assert!(result.contains('T'));
         assert!(result.ends_with('Z') || result.contains('+'));
-    }
-
-    #[test]
-    fn test_status_norm_error() {
-        assert_eq!(status_norm("error"), "error");
-        assert_eq!(status_norm("ERROR"), "error");
-        assert_eq!(status_norm("Error"), "error");
-    }
-
-    #[test]
-    fn test_status_norm_warning() {
-        assert_eq!(status_norm("warning"), "warning");
-        assert_eq!(status_norm("WARNING"), "warning");
-        assert_eq!(status_norm("Warning"), "warning");
-    }
-
-    #[test]
-    fn test_status_norm_ok_default() {
-        assert_eq!(status_norm("ok"), "ok");
-        assert_eq!(status_norm(""), "ok");
-        assert_eq!(status_norm("success"), "ok");
-        assert_eq!(status_norm("anything"), "ok");
     }
 
     #[test]

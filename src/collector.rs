@@ -488,7 +488,6 @@ mod tests {
             sse_clients: Arc::new(Mutex::new(Vec::new())),
             event_seq: Arc::new(AtomicU64::new(1)),
             public_dir: Arc::new(PathBuf::from("public")),
-            api_key: None,
         }
     }
 
