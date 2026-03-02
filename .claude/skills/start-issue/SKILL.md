@@ -2,7 +2,7 @@
 name: start-issue
 description: Pick a ready issue, create a branch, and update issue status
 disable-model-invocation: true
-allowed-tools: Bash, Read, AskUserQuestion
+allowed-tools: Bash, Read, AskUserQuestion, EnterWorktree
 model: haiku
 ---
 
@@ -42,13 +42,13 @@ model: haiku
 - **필수**: AskUserQuestion으로 생성된 브랜치명을 제시하고 수정 기회를 제공한다
 
 ### 4. 워크트리 생성 및 이동
-```bash
-git checkout main && git pull
-git worktree add .claude/worktrees/<브랜치명> -b <브랜치명>
-cd .claude/worktrees/<브랜치명>
-```
-- `.claude/worktrees/` 하위에 격리된 워크트리를 생성한다
-- 생성된 워크트리 디렉토리로 작업 디렉토리를 변경한다
+1. main 브랜치를 최신 상태로 갱신한다:
+   ```bash
+   git checkout main && git pull
+   ```
+2. `EnterWorktree` 도구를 사용하여 워크트리를 생성하고 세션을 전환한다:
+   - `name` 파라미터에 브랜치명을 지정한다
+   - 이 도구는 `.claude/worktrees/<브랜치명>` 디렉토리를 생성하고, 세션의 작업 디렉토리를 자동으로 워크트리로 전환한다
 - 동일 브랜치명의 워크트리가 이미 존재하면 사용자에게 알리고, 기존 워크트리를 재사용할지 삭제 후 재생성할지 AskUserQuestion으로 선택받는다
 
 ### 5. 이슈 상태 변경
