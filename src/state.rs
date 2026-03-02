@@ -1,7 +1,9 @@
 use serde_json::json;
 use std::sync::atomic::Ordering;
 
-use crate::types::{AgentRow, AlertRow, App, Event, Snapshot, SourceRow, State, WorkflowRow};
+use crate::types::{
+    AgentRow, AlertRow, App, Event, Snapshot, SourceRow, State, ToolCallStat, WorkflowRow,
+};
 use crate::utils::now_iso;
 
 pub fn workflow_row(state: &State, role_id: &str) -> WorkflowRow {
@@ -55,6 +57,17 @@ pub fn build_snapshot(state: &State) -> Snapshot {
         },
     );
 
+    let mut tool_counts: Vec<(&String, &u64)> = state.tool_use_counts.iter().collect();
+    tool_counts.sort_by(|a, b| b.1.cmp(a.1));
+    let tool_call_stats: Vec<ToolCallStat> = tool_counts
+        .into_iter()
+        .take(10)
+        .map(|(name, count)| ToolCallStat {
+            name: name.clone(),
+            count: *count,
+        })
+        .collect();
+
     Snapshot {
         generated_at: now_iso(),
         totals,
@@ -67,6 +80,7 @@ pub fn build_snapshot(state: &State) -> Snapshot {
             keys.sort();
             keys.iter().map(|k| workflow_row(state, k)).collect()
         },
+        tool_call_stats,
     }
 }
 
@@ -95,6 +109,7 @@ pub fn append_event(app: &App, evt: Event) {
                 model: evt.model.clone(),
                 is_sidechain: evt.is_sidechain,
                 session_id: evt.session_id.clone(),
+                tool_use_counts: std::collections::HashMap::new(),
             });
 
         row.last_seen = evt.received_at.clone();
@@ -112,6 +127,10 @@ pub fn append_event(app: &App, evt: Event) {
             "error" => row.error += 1,
             "warning" => row.warning += 1,
             _ => row.ok += 1,
+        }
+
+        if evt.event == "tool_call" {
+            *row.tool_use_counts.entry(evt.message.clone()).or_insert(0) += 1;
         }
 
         let token_total = evt
@@ -143,6 +162,12 @@ pub fn append_event(app: &App, evt: Event) {
         }
         if cost_delta > 0.0 {
             state.cost_total_usd += cost_delta;
+        }
+        if evt.event == "tool_call" {
+            *state
+                .tool_use_counts
+                .entry(evt.message.clone())
+                .or_insert(0) += 1;
         }
 
         let source = evt
@@ -270,6 +295,7 @@ mod tests {
                 model: String::new(),
                 is_sidechain: false,
                 session_id: String::new(),
+                tool_use_counts: std::collections::HashMap::new(),
             },
         );
         let row = workflow_row(&state, "agent-1");
@@ -297,6 +323,7 @@ mod tests {
                 model: String::new(),
                 is_sidechain: false,
                 session_id: String::new(),
+                tool_use_counts: std::collections::HashMap::new(),
             },
         );
         let row = workflow_row(&state, "agent-1");
@@ -322,6 +349,7 @@ mod tests {
                 model: String::new(),
                 is_sidechain: false,
                 session_id: String::new(),
+                tool_use_counts: std::collections::HashMap::new(),
             },
         );
         let row = workflow_row(&state, "agent-1");
@@ -347,6 +375,7 @@ mod tests {
                 model: String::new(),
                 is_sidechain: false,
                 session_id: String::new(),
+                tool_use_counts: std::collections::HashMap::new(),
             },
         );
         let row = workflow_row(&state, "agent-1");
@@ -385,6 +414,7 @@ mod tests {
                 model: String::new(),
                 is_sidechain: false,
                 session_id: String::new(),
+                tool_use_counts: std::collections::HashMap::new(),
             },
         );
         state.by_agent.insert(
@@ -403,6 +433,7 @@ mod tests {
                 model: String::new(),
                 is_sidechain: false,
                 session_id: String::new(),
+                tool_use_counts: std::collections::HashMap::new(),
             },
         );
         let snap = build_snapshot(&state);
@@ -543,5 +574,91 @@ mod tests {
         drop(rx);
         broadcast_sse(&app, "hello".to_string());
         assert_eq!(app.sse_clients.lock().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_append_event_tracks_tool_use_counts() {
+        let app = make_test_app();
+        let mut evt1 = make_test_event("ok", "tool_call", "a1", json!({}));
+        evt1.message = "Read".to_string();
+        let mut evt2 = make_test_event("ok", "tool_call", "a1", json!({}));
+        evt2.message = "Read".to_string();
+        let mut evt3 = make_test_event("ok", "tool_call", "a1", json!({}));
+        evt3.message = "Bash".to_string();
+        append_event(&app, evt1);
+        append_event(&app, evt2);
+        append_event(&app, evt3);
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.tool_use_counts["Read"], 2);
+        assert_eq!(state.tool_use_counts["Bash"], 1);
+    }
+
+    #[test]
+    fn test_append_event_tracks_per_agent_tool_counts() {
+        let app = make_test_app();
+        let mut evt1 = make_test_event("ok", "tool_call", "a1", json!({}));
+        evt1.message = "Read".to_string();
+        let mut evt2 = make_test_event("ok", "tool_call", "a2", json!({}));
+        evt2.message = "Read".to_string();
+        let mut evt3 = make_test_event("ok", "tool_call", "a1", json!({}));
+        evt3.message = "Edit".to_string();
+        append_event(&app, evt1);
+        append_event(&app, evt2);
+        append_event(&app, evt3);
+        let state = app.state.lock().unwrap();
+        let a1 = &state.by_agent["a1"];
+        assert_eq!(a1.tool_use_counts["Read"], 1);
+        assert_eq!(a1.tool_use_counts["Edit"], 1);
+        let a2 = &state.by_agent["a2"];
+        assert_eq!(a2.tool_use_counts["Read"], 1);
+        assert!(!a2.tool_use_counts.contains_key("Edit"));
+    }
+
+    #[test]
+    fn test_build_snapshot_includes_tool_call_stats() {
+        let mut state = State::default();
+        state.tool_use_counts.insert("Read".to_string(), 15);
+        state.tool_use_counts.insert("Bash".to_string(), 10);
+        state.tool_use_counts.insert("Edit".to_string(), 5);
+        let snap = build_snapshot(&state);
+        assert_eq!(snap.tool_call_stats.len(), 3);
+        assert_eq!(snap.tool_call_stats[0].name, "Read");
+        assert_eq!(snap.tool_call_stats[0].count, 15);
+        assert_eq!(snap.tool_call_stats[1].name, "Bash");
+        assert_eq!(snap.tool_call_stats[1].count, 10);
+        assert_eq!(snap.tool_call_stats[2].name, "Edit");
+        assert_eq!(snap.tool_call_stats[2].count, 5);
+    }
+
+    #[test]
+    fn test_build_snapshot_tool_call_stats_top_10_limit() {
+        let mut state = State::default();
+        for i in 0..15 {
+            state
+                .tool_use_counts
+                .insert(format!("tool_{}", i), 100 - i as u64);
+        }
+        let snap = build_snapshot(&state);
+        assert_eq!(snap.tool_call_stats.len(), 10);
+        assert!(snap.tool_call_stats[0].count >= snap.tool_call_stats[9].count);
+    }
+
+    #[test]
+    fn test_build_snapshot_empty_tool_call_stats() {
+        let state = State::default();
+        let snap = build_snapshot(&state);
+        assert!(snap.tool_call_stats.is_empty());
+    }
+
+    #[test]
+    fn test_append_event_non_tool_call_does_not_affect_tool_counts() {
+        let app = make_test_app();
+        append_event(
+            &app,
+            make_test_event("ok", "assistant_message", "a1", json!({})),
+        );
+        append_event(&app, make_test_event("ok", "user_message", "a1", json!({})));
+        let state = app.state.lock().unwrap();
+        assert!(state.tool_use_counts.is_empty());
     }
 }

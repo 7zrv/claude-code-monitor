@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildMinuteBuckets, pathForSeries } from '../lib/renders/charts.js';
+import { buildMinuteBuckets, pathForSeries, buildToolCallStats } from '../lib/renders/charts.js';
 
 describe('buildMinuteBuckets', () => {
   it('returns requested number of buckets', () => {
@@ -82,5 +82,47 @@ describe('pathForSeries', () => {
     const d = pathForSeries([100], { left: 0, right: 100 }, { top: 10, bottom: 90 }, 100);
     // y should be at top (10)
     assert.ok(d.includes('10.00'));
+  });
+});
+
+describe('buildToolCallStats', () => {
+  it('returns empty array for no events', () => {
+    assert.deepEqual(buildToolCallStats([]), []);
+  });
+
+  it('ignores non-tool_call events', () => {
+    const events = [
+      { event: 'assistant_message', message: 'hello' },
+      { event: 'user_message', message: 'hi' }
+    ];
+    assert.deepEqual(buildToolCallStats(events), []);
+  });
+
+  it('counts tool calls by name sorted descending', () => {
+    const events = [
+      { event: 'tool_call', message: 'Read' },
+      { event: 'tool_call', message: 'Bash' },
+      { event: 'tool_call', message: 'Read' },
+      { event: 'tool_call', message: 'Read' },
+      { event: 'tool_call', message: 'Bash' },
+      { event: 'tool_call', message: 'Edit' }
+    ];
+    const stats = buildToolCallStats(events);
+    assert.equal(stats.length, 3);
+    assert.equal(stats[0].name, 'Read');
+    assert.equal(stats[0].count, 3);
+    assert.equal(stats[1].name, 'Bash');
+    assert.equal(stats[1].count, 2);
+    assert.equal(stats[2].name, 'Edit');
+    assert.equal(stats[2].count, 1);
+  });
+
+  it('limits to top 10', () => {
+    const events = [];
+    for (let i = 0; i < 15; i++) {
+      events.push({ event: 'tool_call', message: `tool_${i}` });
+    }
+    const stats = buildToolCallStats(events);
+    assert.equal(stats.length, 10);
   });
 });

@@ -47,6 +47,7 @@ pub struct AgentRow {
     pub model: String,
     pub is_sidechain: bool,
     pub session_id: String,
+    pub tool_use_counts: HashMap<String, u64>,
 }
 
 #[derive(Clone, Serialize)]
@@ -90,6 +91,14 @@ pub struct State {
     pub by_source: HashMap<String, SourceRow>,
     pub token_total: u64,
     pub cost_total_usd: f64,
+    pub tool_use_counts: HashMap<String, u64>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolCallStat {
+    pub name: String,
+    pub count: u64,
 }
 
 #[derive(Serialize)]
@@ -102,6 +111,7 @@ pub struct Snapshot {
     pub recent: Vec<Event>,
     pub alerts: Vec<AlertRow>,
     pub workflow_progress: Vec<WorkflowRow>,
+    pub tool_call_stats: Vec<ToolCallStat>,
 }
 
 pub struct ParsedRequest {
