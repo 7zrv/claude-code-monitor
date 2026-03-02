@@ -20,6 +20,9 @@
   --border: rgb(226 109 92 / 40%);
   --border-subtle: rgb(226 109 92 / 24%);
   --border-medium: rgb(226 109 92 / 30%);
+
+  --hover-overlay: rgb(226 109 92 / 8%);
+  --focus-ring: rgb(226 109 92 / 60%);
 }
 
 * {
@@ -91,6 +94,12 @@ main {
 
 .card {
   padding: 14px;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgb(226 109 92 / 16%);
 }
 
 .card--ok {
@@ -165,6 +174,22 @@ input[type='search'] {
   min-width: 180px;
 }
 
+select,
+input[type='search'] {
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+select:hover,
+input[type='search']:hover {
+  border-color: var(--warm);
+}
+
+select:focus,
+input[type='search']:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
 #eventMeta {
   display: block;
   margin-bottom: 8px;
@@ -184,6 +209,12 @@ input[type='search'] {
   display: grid;
   gap: 4px;
   background: rgb(246 237 227 / 70%);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.workflow-item:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 12px rgb(226 109 92 / 12%);
 }
 
 .charts-grid {
@@ -275,6 +306,10 @@ th {
   letter-spacing: 0.02em;
 }
 
+tbody tr:hover td {
+  background: var(--hover-overlay);
+}
+
 .events {
   max-height: 320px;
   overflow-y: auto;
@@ -292,6 +327,12 @@ th {
   background: rgb(246 237 227 / 78%);
   font-size: 13px;
   align-items: center;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.event:hover {
+  background: var(--hover-overlay);
+  border-color: var(--border);
 }
 
 .badge {
@@ -362,7 +403,18 @@ th {
   color: var(--color-error);
 }
 
-@media (max-width: 760px) {
+@media (max-width: 1080px) {
+  main,
+  .header {
+    width: 96vw;
+  }
+
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
   .event {
     grid-template-columns: 1fr;
     gap: 4px;
@@ -372,5 +424,28 @@ th {
   td {
     font-size: 13px;
     padding: 8px 6px;
+  }
+
+  .cards {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  h1 {
+    font-size: 1.3rem;
+  }
+
+  .panel {
+    padding: 8px;
+  }
+
+  input[type='search'] {
+    width: 100%;
+    min-width: unset;
   }
 }
