@@ -4,5 +4,11 @@ export const CHART_PALETTE = [
 ];
 
 export function colorForIndex(idx) {
-  return CHART_PALETTE[idx % CHART_PALETTE.length];
+  const fallback = CHART_PALETTE[idx % CHART_PALETTE.length];
+  if (typeof document === 'undefined') return fallback;
+  const i = (idx % CHART_PALETTE.length) + 1;
+  const cssVar = getComputedStyle(document.documentElement)
+    .getPropertyValue(`--chart-${i}`)
+    .trim();
+  return cssVar || fallback;
 }

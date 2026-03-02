@@ -27,6 +27,10 @@ let renderQueued = false;
 const storageKey = 'agent_monitor_event_filters_v1';
 let pollTimer = null;
 
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
 function escapeHtml(value) {
   return String(value ?? '')
     .replaceAll('&', '&amp;')
@@ -239,6 +243,14 @@ function renderThroughputChart(events = []) {
   const slot = (right - left) / buckets.length;
   const midY = top + chartHeight / 2;
 
+  const barColor = cssVar('--chart-bar');
+  const axisColor = cssVar('--chart-axis');
+  const axisSecondary = cssVar('--chart-axis-secondary');
+  const axisMid = cssVar('--chart-axis-mid');
+  const labelColor = cssVar('--chart-label');
+  const sublabelColor = cssVar('--chart-sublabel');
+  const timescaleColor = cssVar('--chart-timescale');
+
   const bars = buckets
     .map((b, idx) => {
       const barH = Math.max(1, (b.events / max) * chartHeight);
@@ -246,25 +258,25 @@ function renderThroughputChart(events = []) {
       const y = bottom - barH;
       const w = Math.max(1, slot - 2);
       const title = `${new Date(b.ts).toLocaleTimeString()} : ${b.events} events/min`;
-      return `<rect class="throughput-bar" data-label="${escapeHtml(title)}" x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${w.toFixed(2)}" height="${barH.toFixed(2)}" fill="rgb(226 109 92 / 70%)"></rect>`;
+      return `<rect class="throughput-bar" data-label="${escapeHtml(title)}" x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${w.toFixed(2)}" height="${barH.toFixed(2)}" fill="${barColor}"></rect>`;
     })
     .join('');
 
   throughputChart.innerHTML = `
     <title>분당 이벤트 처리량 바 차트</title>
-    <line x1="${left}" y1="${bottom}" x2="${right}" y2="${bottom}" stroke="rgb(226 109 92 / 45%)" stroke-width="1" />
-    <line x1="${left}" y1="${top}" x2="${left}" y2="${bottom}" stroke="rgb(226 109 92 / 30%)" stroke-width="1" />
-    <line x1="${left}" y1="${midY}" x2="${right}" y2="${midY}" stroke="rgb(226 109 92 / 15%)" stroke-width="1" stroke-dasharray="4 4" />
+    <line x1="${left}" y1="${bottom}" x2="${right}" y2="${bottom}" stroke="${axisColor}" stroke-width="1" />
+    <line x1="${left}" y1="${top}" x2="${left}" y2="${bottom}" stroke="${axisSecondary}" stroke-width="1" />
+    <line x1="${left}" y1="${midY}" x2="${right}" y2="${midY}" stroke="${axisMid}" stroke-width="1" stroke-dasharray="4 4" />
     ${bars}
-    <text x="${left}" y="${top - 4}" font-size="10" fill="rgb(226 109 92 / 80%)">max ${max}</text>
-    <text x="${left}" y="${midY - 4}" font-size="9" fill="rgb(226 109 92 / 55%)">${Math.round(max / 2)}</text>
+    <text x="${left}" y="${top - 4}" font-size="10" fill="${labelColor}">max ${max}</text>
+    <text x="${left}" y="${midY - 4}" font-size="9" fill="${sublabelColor}">${Math.round(max / 2)}</text>
     ${[25, 20, 15, 10, 5, 0]
       .map((minAgo) => {
         const idx = buckets.length - minAgo - 1;
         if (idx < 0 || idx >= buckets.length) return '';
         const x = left + idx * slot + slot / 2;
         const label = minAgo === 0 ? 'now' : `-${minAgo}m`;
-        return `<text x="${x.toFixed(2)}" y="${bottom + 14}" font-size="9" text-anchor="middle" fill="rgb(226 109 92 / 60%)">${label}</text>`;
+        return `<text x="${x.toFixed(2)}" y="${bottom + 14}" font-size="9" text-anchor="middle" fill="${timescaleColor}">${label}</text>`;
       })
       .join('')}
   `;
@@ -306,14 +318,22 @@ function renderTokenTrendChart(events = []) {
     )
   ).sort();
 
+  const axisColor = cssVar('--chart-axis');
+
   if (!agents.length) {
     tokenTrendChart.innerHTML = `
       <title>모델별 분당 토큰 사용량 추이 차트</title>
-      <line x1="36" y1="190" x2="620" y2="190" stroke="rgb(226 109 92 / 45%)" stroke-width="1" />
+      <line x1="36" y1="190" x2="620" y2="190" stroke="${axisColor}" stroke-width="1" />
     `;
     tokenTrendLegend.innerHTML = '<span>No token data</span>';
     return;
   }
+
+  const axisSecondary = cssVar('--chart-axis-secondary');
+  const axisMid = cssVar('--chart-axis-mid');
+  const labelColor = cssVar('--chart-label');
+  const sublabelColor = cssVar('--chart-sublabel');
+  const timescaleColor = cssVar('--chart-timescale');
 
   const width = { left: 36, right: 620 };
   const height = { top: 20, bottom: 190 };
@@ -348,20 +368,20 @@ function renderTokenTrendChart(events = []) {
 
   tokenTrendChart.innerHTML = `
     <title>모델별 분당 토큰 사용량 추이 차트</title>
-    <line x1="${width.left}" y1="${height.bottom}" x2="${width.right}" y2="${height.bottom}" stroke="rgb(226 109 92 / 45%)" stroke-width="1" />
-    <line x1="${width.left}" y1="${height.top}" x2="${width.left}" y2="${height.bottom}" stroke="rgb(226 109 92 / 30%)" stroke-width="1" />
-    <line x1="${width.left}" y1="${midY}" x2="${width.right}" y2="${midY}" stroke="rgb(226 109 92 / 15%)" stroke-width="1" stroke-dasharray="4 4" />
+    <line x1="${width.left}" y1="${height.bottom}" x2="${width.right}" y2="${height.bottom}" stroke="${axisColor}" stroke-width="1" />
+    <line x1="${width.left}" y1="${height.top}" x2="${width.left}" y2="${height.bottom}" stroke="${axisSecondary}" stroke-width="1" />
+    <line x1="${width.left}" y1="${midY}" x2="${width.right}" y2="${midY}" stroke="${axisMid}" stroke-width="1" stroke-dasharray="4 4" />
     ${lineSvg}
     ${endLabels}
-    <text x="${width.left}" y="${height.top - 4}" font-size="10" fill="rgb(226 109 92 / 80%)">max ${max}</text>
-    <text x="${width.left}" y="${midY - 4}" font-size="9" fill="rgb(226 109 92 / 55%)">${Math.round(max / 2)}</text>
+    <text x="${width.left}" y="${height.top - 4}" font-size="10" fill="${labelColor}">max ${max}</text>
+    <text x="${width.left}" y="${midY - 4}" font-size="9" fill="${sublabelColor}">${Math.round(max / 2)}</text>
     ${[25, 20, 15, 10, 5, 0]
       .map((minAgo) => {
         const idx = buckets.length - minAgo - 1;
         if (idx < 0 || idx >= buckets.length) return '';
         const x = width.left + idx * slotWidth;
         const label = minAgo === 0 ? 'now' : `-${minAgo}m`;
-        return `<text x="${x.toFixed(2)}" y="${height.bottom + 14}" font-size="9" text-anchor="middle" fill="rgb(226 109 92 / 60%)">${label}</text>`;
+        return `<text x="${x.toFixed(2)}" y="${height.bottom + 14}" font-size="9" text-anchor="middle" fill="${timescaleColor}">${label}</text>`;
       })
       .join('')}
   `;
@@ -598,6 +618,12 @@ eventSearch.addEventListener('input', () => {
     const filtered = getFilteredEvents(allEvents);
     renderEvents(filtered);
     renderEventMeta(allEvents.length, filtered.length);
+  }
+});
+
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  if (snapshotState) {
+    renderGraphs(snapshotState.recent || []);
   }
 });
 
