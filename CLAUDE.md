@@ -2,12 +2,11 @@
 
 ## 프로젝트 개요
 
-Claude 에이전트의 실시간 모니터링 대시보드. Rust 백엔드 + Node.js 서버 + Electron 데스크톱 앱 구조.
+Claude 에이전트의 실시간 모니터링 대시보드. Rust 백엔드 + Electron 데스크톱 앱 구조.
 
 ## 기술 스택
 
 - **Backend**: Rust (stable, edition 2021) — `src/main.rs`
-- **Server**: Node.js >= 20 (ESM) — `server.js`
 - **Desktop**: Electron — `desktop/main.js`
 - **Dependencies**: serde, serde_json, time
 
@@ -15,11 +14,8 @@ Claude 에이전트의 실시간 모니터링 대시보드. Rust 백엔드 + Nod
 
 ```
 src/            Rust 백엔드
-server.js       Node.js SSE 서버
 public/         프론트엔드 정적 파일
 desktop/        Electron 앱
-scripts/        유틸리티 스크립트 (collector, load test)
-migration/      마이그레이션 파일
 .github/        CI, 이슈/PR 템플릿
 .claude/skills/ Claude Code 스킬 (아래 워크플로우 참조)
 ```
@@ -33,9 +29,9 @@ cargo fmt --check       # 포맷 검사
 cargo clippy -- -D warnings  # 린트
 cargo test              # Rust 테스트
 cargo tarpaulin --fail-under 80  # 커버리지 검사 (최소 80%)
-npm install             # Node 의존성 설치
-npm run check           # Node 구문 검사 (전체 JS 파일)
-npm start               # 서버 실행
+npm install             # Node 의존성 설치 (Electron)
+npm run check           # JS 구문 검사 (프론트엔드/데스크톱)
+npm start               # Rust 서버 실행
 ```
 
 ## CI 파이프라인

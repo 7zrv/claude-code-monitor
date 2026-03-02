@@ -3,9 +3,8 @@
 [![GitHub release](https://img.shields.io/github/v/release/7zrv/claude-code-monitor)](https://github.com/7zrv/claude-code-monitor/releases)
 [![License](https://img.shields.io/github/license/7zrv/claude-code-monitor)](https://github.com/7zrv/claude-code-monitor/blob/main/LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-stable-orange?logo=rust)](https://www.rust-lang.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-20%2B-green?logo=node.js)](https://nodejs.org/)
 
-Claude 에이전트의 실시간 모니터링 대시보드. Rust 백엔드 + Node.js 서버 + Electron 데스크톱 앱 구조.
+Claude 에이전트의 실시간 모니터링 대시보드. Rust 백엔드 + Electron 데스크톱 앱 구조.
 
 ## 핵심 기능
 
