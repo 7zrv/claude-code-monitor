@@ -24,15 +24,37 @@ CLAUDE.md의 이슈 생성 규칙에 따라 GitHub 이슈를 생성한다.
 
 ### 2. 우선순위 선택
 AskUserQuestion으로 우선순위를 선택받는다:
-- `priority: high` — 우선 처리 필요
-- `priority: medium` — 일반 우선순위
-- `priority: low` — 여유 있을 때 처리
+```json
+{
+  "questions": [{
+    "question": "이슈의 우선순위를 선택해주세요.",
+    "header": "우선순위",
+    "options": [
+      {"label": "priority: high", "description": "우선 처리 필요"},
+      {"label": "priority: medium", "description": "일반 우선순위"},
+      {"label": "priority: low", "description": "여유 있을 때 처리"}
+    ],
+    "multiSelect": false
+  }]
+}
+```
 
 ### 3. 카테고리 선택
 AskUserQuestion으로 카테고리를 선택받는다:
-- `enhancement` — 새 기능 또는 개선
-- `bug` — 버그 수정
-- `documentation` — 문서 작업
+```json
+{
+  "questions": [{
+    "question": "이슈의 카테고리를 선택해주세요.",
+    "header": "카테고리",
+    "options": [
+      {"label": "enhancement", "description": "새 기능 또는 개선"},
+      {"label": "bug", "description": "버그 수정"},
+      {"label": "documentation", "description": "문서 작업"}
+    ],
+    "multiSelect": false
+  }]
+}
+```
 
 ### 4. 본문 작성
 사용자에게 배경과 작업 내용을 질문한 뒤, 아래 형식으로 본문을 구성한다:

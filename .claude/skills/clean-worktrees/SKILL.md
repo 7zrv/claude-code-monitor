@@ -59,12 +59,35 @@ model: haiku
 ### 4. 사용자 확인
 
 AskUserQuestion으로 정리 범위를 선택받는다:
+```json
+{
+  "questions": [{
+    "question": "워크트리 정리 범위를 선택해주세요.",
+    "header": "정리 범위",
+    "options": [
+      {"label": "전체 정리", "description": "정리 대상 워크트리를 모두 제거"},
+      {"label": "선택 정리", "description": "정리 대상 중 제거할 항목을 개별 선택"},
+      {"label": "취소", "description": "정리하지 않고 종료"}
+    ],
+    "multiSelect": false
+  }]
+}
+```
 
-- **전체 정리**: 정리 대상 워크트리를 모두 제거
-- **선택 정리**: 정리 대상 중 제거할 항목을 개별 선택
-- **취소**: 정리하지 않고 종료
-
-"선택 정리"를 선택한 경우, 추가 AskUserQuestion(multiSelect)으로 제거할 워크트리를 선택받는다.
+"선택 정리"를 선택한 경우, 추가 AskUserQuestion으로 제거할 워크트리를 개별 선택받는다:
+```json
+{
+  "questions": [{
+    "question": "제거할 워크트리를 선택해주세요.",
+    "header": "워크트리 선택",
+    "options": [
+      {"label": "<브랜치명>", "description": "<사유>"}
+    ],
+    "multiSelect": true
+  }]
+}
+```
+- 정리 대상 워크트리 각각을 options 배열에 매핑한다
 
 ### 5. 정리 실행
 

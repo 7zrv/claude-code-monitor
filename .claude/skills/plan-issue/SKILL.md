@@ -79,9 +79,22 @@ gh issue view <이슈번호>
 
 ### 6. 사용자 확인
 - 작성된 `PLAN.md`의 핵심 내용을 터미널에 요약 출력한다
-- AskUserQuestion으로 계획에 대한 피드백을 받는다
+- AskUserQuestion으로 계획에 대한 피드백을 받는다:
+  ```json
+  {
+    "questions": [{
+      "question": "작업 계획을 검토해주세요. 이대로 진행할까요?",
+      "header": "계획 승인",
+      "options": [
+        {"label": "승인", "description": "이 계획대로 진행"},
+        {"label": "수정 요청", "description": "피드백을 입력하여 계획 수정"}
+      ],
+      "multiSelect": false
+    }]
+  }
+  ```
   - **승인**: 그대로 진행
-  - **수정 요청**: 피드백을 반영하여 `PLAN.md`를 수정한다
+  - **수정 요청** 또는 **Other**: 사용자 피드백을 반영하여 `PLAN.md`를 수정한다
 
 ### 7. 결과 출력
 ```
