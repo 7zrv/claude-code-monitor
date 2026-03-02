@@ -626,7 +626,7 @@ tr.tree-last .tree-branch::before {
   transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
-.alert-item--selected {
+.alert-item.alert-item--selected {
   border-color: var(--warm);
   background: var(--hover-overlay);
   box-shadow: 0 0 0 2px var(--focus-ring);
