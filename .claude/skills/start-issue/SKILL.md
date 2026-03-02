@@ -20,7 +20,11 @@ model: haiku
 ### 1. 이슈 선택
 - 위에 주입된 Ready Issues 목록을 사용자에게 제시한다
 - 목록이 비어 있으면 "현재 `status: ready` 상태의 이슈가 없습니다."를 출력하고 종료한다
-- AskUserQuestion으로 작업할 이슈를 선택받는다. 파라미터 구조:
+- AskUserQuestion으로 작업할 이슈를 선택받는다.
+  - **주의**: `AskUserQuestion`의 `options`는 최대 4개까지만 허용된다.
+  - 이슈가 4개를 초과하면 우선순위(priority: high → medium → low) 순으로 상위 4개만 options에 포함한다.
+  - 나머지 이슈는 텍스트로 목록을 출력하고, 사용자가 "기타 이슈 선택"을 고르면 이슈 번호를 직접 입력받는다.
+  - 파라미터 구조 (이슈가 4개 이하인 경우):
   ```json
   {
     "questions": [{
@@ -33,8 +37,24 @@ model: haiku
     }]
   }
   ```
-  - Ready Issues 목록의 각 이슈를 options 배열에 매핑한다
+  - 파라미터 구조 (이슈가 5개 이상인 경우):
+  ```json
+  {
+    "questions": [{
+      "question": "어떤 이슈를 작업하시겠습니까? (나머지 이슈는 아래 목록 참고)\n<텍스트로 전체 이슈 목록 출력>",
+      "header": "이슈 선택",
+      "options": [
+        {"label": "#번호 이슈제목", "description": "라벨 정보"},
+        {"label": "#번호 이슈제목", "description": "라벨 정보"},
+        {"label": "#번호 이슈제목", "description": "라벨 정보"},
+        {"label": "기타 이슈 선택", "description": "위 목록에 없는 이슈 번호를 직접 입력"}
+      ],
+      "multiSelect": false
+    }]
+  }
+  ```
   - label에는 `#번호 이슈제목` 형식을, description에는 라벨 정보를 넣는다
+  - "기타 이슈 선택" 또는 "Other"를 선택한 경우 사용자가 입력한 이슈 번호 텍스트를 사용한다
   - 응답에서 선택된 label의 이슈 번호를 파싱하여 사용한다
 
 ### 2. 브랜치 prefix 결정
