@@ -12,7 +12,6 @@ pub struct App {
     pub sse_clients: Arc<Mutex<Vec<Sender<String>>>>,
     pub event_seq: Arc<AtomicU64>,
     pub public_dir: Arc<PathBuf>,
-    pub api_key: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -108,6 +107,4 @@ pub struct Snapshot {
 pub struct ParsedRequest {
     pub method: String,
     pub path: String,
-    pub headers: HashMap<String, String>,
-    pub body: Vec<u8>,
 }

@@ -33,10 +33,6 @@ fn main() {
                 .unwrap_or_else(|_| ".".to_string());
             PathBuf::from(home).join(".claude")
         });
-    let api_key = std::env::var("MONITOR_API_KEY")
-        .ok()
-        .filter(|v| !v.is_empty());
-
     let listener = std::net::TcpListener::bind(format!("{}:{}", host, port)).expect("bind failed");
 
     let app = App {
@@ -48,7 +44,6 @@ fn main() {
                 .map(PathBuf::from)
                 .unwrap_or_else(|_| PathBuf::from("public")),
         ),
-        api_key,
     };
 
     spawn_claude_collector(app.clone(), claude_home, poll_ms, backfill_lines);

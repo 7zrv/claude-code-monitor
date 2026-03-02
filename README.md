@@ -8,7 +8,6 @@ Claude 에이전트의 실시간 모니터링 대시보드. Rust 백엔드 + Ele
 
 ## 핵심 기능
 
-- `POST /api/events` 이벤트 수집
 - `GET /api/events` 스냅샷
 - `GET /api/stream` SSE 실시간 스트림
 - `GET /api/alerts` 경고/오류 알림
@@ -34,7 +33,6 @@ cargo run --release
 | `CLAUDE_HOME` | `~/.claude` | Claude 데이터 디렉토리 |
 | `CLAUDE_POLL_MS` | `2500` | 데이터 수집 주기 (ms) |
 | `CLAUDE_BACKFILL_LINES` | `25` | 초기 로드 시 읽을 라인 수 |
-| `MONITOR_API_KEY` | (없음) | 설정 시 `POST /api/events`에 `x-api-key` 헤더 필수 |
 | `PUBLIC_DIR` | `public` | 정적 파일 디렉토리 경로 |
 | `HTTP_READ_TIMEOUT_SEC` | `5` | HTTP 읽기 타임아웃 (초) |
 
