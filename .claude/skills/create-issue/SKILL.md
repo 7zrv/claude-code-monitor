@@ -74,7 +74,14 @@ AskUserQuestion으로 카테고리를 선택받는다:
 {추가 사항}
 ```
 
-### 5. 이슈 생성
+### 5. 라벨 존재 확인
+위에 주입된 기존 라벨 목록에서 사용할 라벨(`status: ready`, 선택된 우선순위, 선택된 카테고리)이 모두 존재하는지 확인한다.
+- 존재하지 않는 라벨이 있으면 `gh label create "<라벨명>" --color "<색상>"`으로 생성한다
+  - `status: ready` → `#0E8A16`
+  - `priority: high` → `#D93F0B`, `priority: medium` → `#FBCA04`, `priority: low` → `#C5DEF5`
+  - `enhancement` → `#A2EEEF`, `bug` → `#D73A4A`, `documentation` → `#0075CA`
+
+### 6. 이슈 생성
 ```bash
 gh issue create \
   --title "<제목>" \
@@ -82,5 +89,5 @@ gh issue create \
   --body "<본문>"
 ```
 
-### 6. 결과 출력
+### 7. 결과 출력
 생성된 이슈 URL을 반환한다.

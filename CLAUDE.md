@@ -57,7 +57,7 @@ npm start               # Rust 서버 실행
 - **브랜치**: `feat/<name>`, `fix/<name>`, `docs/<name>`, `refactor/<name>`, `chore/<name>`
 - **커밋**: Conventional Commits — `<type>(<scope>): <description>`
 - **Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `ci`
-- **Scopes**: `api`, `sse`, `ui`, `desktop`, `collector`, `docs`
+- **Scopes**: `api`, `sse`, `ui`, `desktop`, `skills`, `docs`
 - Subject line: lowercase, 70자 이내, 마침표 없음
 
 ## PR 규칙

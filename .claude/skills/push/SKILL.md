@@ -6,7 +6,7 @@ allowed-tools: Bash
 model: haiku
 ---
 
-# Push to Remote
+# 리모트 푸시
 
 ## Current State
 
@@ -16,8 +16,8 @@ model: haiku
 
 ## Instructions
 
-1. Check if the current branch has an upstream. If not, use `git push -u origin <branch>`
-2. If upstream exists, use `git push`
-3. Never force push unless explicitly requested
-4. Never push to `main` or `master` directly — warn the user
-5. Show the result after pushing
+1. 현재 브랜치가 `main` 또는 `master`이면 경고를 출력하고 중단한다
+2. upstream이 설정되지 않았으면 `git push -u origin <branch>`를 사용한다
+3. upstream이 있으면 `git push`를 사용한다
+4. `--force` 푸시는 사용자가 명시적으로 요청하지 않는 한 절대 사용하지 않는다
+5. 푸시 결과를 출력한다

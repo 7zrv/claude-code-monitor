@@ -46,7 +46,7 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 **Types:** `feat`, `fix`, `docs`, `refactor`, `chore`, `test`, `ci`
 
-**Scopes (optional):** `api`, `sse`, `ui`, `desktop`, `collector`, `docs`
+**Scopes (optional):** `api`, `sse`, `ui`, `desktop`, `skills`, `docs`
 
 **Rules:**
 - Subject line: 70 characters max, lowercase start, no period
