@@ -2,6 +2,7 @@ import { recalcWorkflow } from './lib/workflow.js';
 import { buildCardData } from './lib/cards.js';
 import { colorForIndex } from './lib/palette.js';
 import { buildAgentTree } from './lib/agent-tree.js';
+import { displayNameFor } from './lib/agent-display.js';
 
 const cardsRoot = document.getElementById('cards');
 const throughputChart = document.getElementById('throughputChart');
@@ -128,7 +129,7 @@ function agentRowHtml(row, isChild, isLastChild) {
     : '-';
   return `
     <tr${cls}>
-      <td>${prefix}<span class="badge">${escapeHtml(row.agentId)}</span></td>
+      <td>${prefix}<span class="badge" title="${escapeHtml(row.agentId)}">${escapeHtml(displayNameFor(row.agentId))}</span></td>
       <td>${modelBadge}</td>
       <td>${new Date(row.lastSeen).toLocaleTimeString()}</td>
       <td>${Number(row.total) || 0}</td>
@@ -191,7 +192,7 @@ function renderEvents(events) {
       (evt) => `
       <div class="event">
         <span>${new Date(evt.receivedAt).toLocaleTimeString()}</span>
-        <span><strong>${escapeHtml(evt.agentId)}</strong></span>
+        <span title="${escapeHtml(evt.agentId)}"><strong>${escapeHtml(displayNameFor(evt.agentId))}</strong></span>
         <span>${escapeHtml(evt.event)}</span>
         <span>${escapeHtml(evt.message || '')}</span>
         ${statusPill(evt.status)}
@@ -212,7 +213,7 @@ function renderAlerts(alerts = []) {
       (alert) => `
       <div class="event">
         <span>${new Date(alert.createdAt).toLocaleTimeString()}</span>
-        <span><strong>${escapeHtml(alert.agentId)}</strong></span>
+        <span title="${escapeHtml(alert.agentId)}"><strong>${escapeHtml(displayNameFor(alert.agentId))}</strong></span>
         <span>${escapeHtml(alert.event)}</span>
         <span>${escapeHtml(alert.message)}</span>
         ${statusPill(alert.severity)}
@@ -378,7 +379,7 @@ function renderTokenTrendChart(events = []) {
       const last = values[values.length - 1] || 0;
       const x = width.right - 2;
       const y = height.bottom - (last / max) * (height.bottom - height.top);
-      return `<text x="${x}" y="${Math.max(height.top + 8, y - idx * 2).toFixed(2)}" text-anchor="end" font-size="10" fill="${colorForIndex(idx)}">${escapeHtml(agent)}</text>`;
+      return `<text x="${x}" y="${Math.max(height.top + 8, y - idx * 2).toFixed(2)}" text-anchor="end" font-size="10" fill="${colorForIndex(idx)}"><title>${escapeHtml(agent)}</title>${escapeHtml(displayNameFor(agent))}</text>`;
     })
     .join('');
 
@@ -412,7 +413,7 @@ function renderTokenTrendChart(events = []) {
           <svg class="legend-line" viewBox="0 0 22 8" preserveAspectRatio="none">
             <line x1="0" y1="4" x2="22" y2="4" stroke="${color}" stroke-width="${strokeWidth}" />
           </svg>
-          <strong>${escapeHtml(agent)}</strong>
+          <strong title="${escapeHtml(agent)}">${escapeHtml(displayNameFor(agent))}</strong>
           <em>${numberFmt.format(latest)} tok/min</em>
         </span>
       `;
@@ -432,7 +433,7 @@ function populateAgentFilter(agents = []) {
   for (const agent of agents) {
     const opt = document.createElement('option');
     opt.value = agent.agentId;
-    opt.textContent = agent.isSidechain ? `\u21b3 ${agent.agentId}` : agent.agentId;
+    opt.textContent = agent.isSidechain ? `\u21b3 ${displayNameFor(agent.agentId)}` : displayNameFor(agent.agentId);
     agentFilter.appendChild(opt);
   }
   if (ids.includes(prev) || prev === 'all') {
