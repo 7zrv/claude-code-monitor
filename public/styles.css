@@ -615,3 +615,112 @@ tr.tree-last .tree-branch::before {
   background: var(--border-subtle);
   color: var(--warm-text);
 }
+
+/* ── Alert drilldown styles ── */
+.alert-item {
+  display: grid;
+  grid-template-columns: auto auto auto 1fr auto;
+  gap: 8px;
+  align-items: center;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.alert-item--selected {
+  border-color: var(--warm);
+  background: var(--hover-overlay);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.alert-drilldown {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  backdrop-filter: blur(3px);
+  padding: 14px;
+}
+
+.alert-drilldown[hidden] {
+  display: none;
+}
+
+.drilldown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.drilldown-header h3 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drilldown-close {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--warm-text);
+  cursor: pointer;
+  padding: 4px 10px;
+  font-size: 14px;
+  transition: background 0.12s ease;
+}
+
+.drilldown-close:hover {
+  background: var(--hover-overlay);
+}
+
+.drilldown-section {
+  margin-top: 10px;
+}
+
+.drilldown-section h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+}
+
+.drilldown-section p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.drilldown-agent-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.drilldown-event {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-event);
+  font-size: 12px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.drilldown-tool-input {
+  grid-column: 1 / -1;
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  font-size: 11px;
+  max-height: 120px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
