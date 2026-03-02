@@ -14,6 +14,7 @@ const workflowRoot = document.getElementById('workflow');
 const agentsBody = document.getElementById('agentsBody');
 const eventsRoot = document.getElementById('events');
 const alertsRoot = document.getElementById('alerts');
+const alertDrilldownRoot = document.getElementById('alertDrilldown');
 const clock = document.getElementById('clock');
 const connectionEl = document.getElementById('connection');
 const agentFilter = document.getElementById('agentFilter');
@@ -85,7 +86,7 @@ function renderSnapshot(snapshot) {
   const filteredEvents = getFilteredEvents(allEvents, getFilters());
   renderEvents(filteredEvents, eventsRoot);
   renderEventMeta(allEvents.length, filteredEvents.length, eventMetaEl);
-  renderAlerts(snapshot.alerts || [], alertsRoot);
+  renderAlerts(snapshot.alerts || [], alertsRoot, alertDrilldownRoot, snapshot);
   clock.textContent = `Last refresh: ${new Date(snapshot.generatedAt).toLocaleTimeString()}`;
 }
 
