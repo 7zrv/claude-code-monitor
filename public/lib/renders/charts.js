@@ -200,7 +200,79 @@ export function renderTokenTrendChart(events, el, legend, numberFmt) {
     .join('');
 }
 
-export function renderGraphs(events, els, numberFmt) {
+export function buildToolCallStats(events = []) {
+  const counts = {};
+  for (const evt of events) {
+    if (evt.event !== 'tool_call') continue;
+    const name = evt.message || 'unknown';
+    counts[name] = (counts[name] || 0) + 1;
+  }
+  return Object.entries(counts)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+}
+
+export function renderToolCallChart(stats, el, tooltip) {
+  const top = 10;
+  const bottom = 210;
+  const left = 100;
+  const right = 620;
+  const chartWidth = right - left;
+  const max = Math.max(1, ...stats.map((s) => s.count));
+  const rowH = Math.min(28, (bottom - top) / Math.max(1, stats.length));
+
+  const axisColor = cssVar('--chart-axis');
+  const labelColor = cssVar('--chart-label');
+
+  if (!stats.length) {
+    el.innerHTML = `
+      <title>도구별 호출 빈도 가로 바 차트</title>
+      <text x="${left}" y="${(top + bottom) / 2}" font-size="12" fill="${labelColor}">No tool call data</text>
+    `;
+    return;
+  }
+
+  const bars = stats
+    .map((s, idx) => {
+      const y = top + idx * rowH;
+      const barW = Math.max(2, (s.count / max) * chartWidth);
+      const title = `${escapeHtml(s.name)}: ${s.count} calls`;
+      return `
+        <text x="${left - 6}" y="${y + rowH / 2 + 4}" font-size="11" text-anchor="end" fill="${labelColor}">${escapeHtml(s.name)}</text>
+        <rect class="tool-bar" data-label="${escapeHtml(title)}" x="${left}" y="${y + 2}" width="${barW.toFixed(2)}" height="${(rowH - 4).toFixed(2)}" rx="3" fill="${colorForIndex(idx)}" opacity="0.85"></rect>
+        <text x="${Math.min(left + barW + 4, right - 5)}" y="${y + rowH / 2 + 4}" font-size="10" fill="${labelColor}">${s.count}</text>
+      `;
+    })
+    .join('');
+
+  el.innerHTML = `
+    <title>도구별 호출 빈도 가로 바 차트</title>
+    <line x1="${left}" y1="${top}" x2="${left}" y2="${bottom}" stroke="${axisColor}" stroke-width="1" />
+    ${bars}
+  `;
+
+  el.querySelectorAll('.tool-bar').forEach((bar) => {
+    bar.addEventListener('mouseenter', () => {
+      tooltip.hidden = false;
+      tooltip.textContent = bar.dataset.label || '';
+    });
+    bar.addEventListener('mouseleave', () => {
+      tooltip.hidden = true;
+    });
+    bar.addEventListener('mousemove', (e) => {
+      const rect = el.getBoundingClientRect();
+      const x = e.clientX - rect.left + 12;
+      const y = e.clientY - rect.top - 8;
+      tooltip.style.left = `${Math.max(8, x)}px`;
+      tooltip.style.top = `${Math.max(8, y)}px`;
+    });
+  });
+}
+
+export function renderGraphs(events, els, numberFmt, toolCallStats) {
   renderThroughputChart(events, els.throughputChart, els.throughputTooltip);
   renderTokenTrendChart(events, els.tokenTrendChart, els.tokenTrendLegend, numberFmt);
+  const stats = toolCallStats || buildToolCallStats(events);
+  renderToolCallChart(stats, els.toolCallChart, els.toolCallTooltip);
 }

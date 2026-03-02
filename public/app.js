@@ -27,7 +27,9 @@ const chartEls = {
   throughputChart: document.getElementById('throughputChart'),
   throughputTooltip: document.getElementById('throughputTooltip'),
   tokenTrendChart: document.getElementById('tokenTrendChart'),
-  tokenTrendLegend: document.getElementById('tokenTrendLegend')
+  tokenTrendLegend: document.getElementById('tokenTrendLegend'),
+  toolCallChart: document.getElementById('toolCallChart'),
+  toolCallTooltip: document.getElementById('toolCallTooltip')
 };
 
 const numberFmt = new Intl.NumberFormat('ko-KR');
@@ -82,7 +84,7 @@ function renderSnapshot(snapshot) {
   renderWorkflow(snapshot.workflowProgress || recalcWorkflow(snapshot.agents));
   renderAgents(snapshot.agents || [], agentsBody, agentFilter.value);
   const allEvents = snapshot.recent || [];
-  renderGraphs(allEvents, chartEls, numberFmt);
+  renderGraphs(allEvents, chartEls, numberFmt, snapshot.toolCallStats);
   const filteredEvents = getFilteredEvents(allEvents, getFilters());
   renderEvents(filteredEvents, eventsRoot);
   renderEventMeta(allEvents.length, filteredEvents.length, eventMetaEl);
@@ -121,7 +123,7 @@ for (const el of [eventStatusFilter, eventLimit]) {
 eventSearch.addEventListener('input', () => { doSaveFilters(); refilterEvents(); });
 
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-  if (snapshotState) renderGraphs(snapshotState.recent || [], chartEls, numberFmt);
+  if (snapshotState) renderGraphs(snapshotState.recent || [], chartEls, numberFmt, snapshotState.toolCallStats);
 });
 
 applyLoadedFilters();
