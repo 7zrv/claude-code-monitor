@@ -11,7 +11,6 @@ import { renderAlerts } from './lib/renders/alerts.js';
 
 const cardsRoot = document.getElementById('cards');
 const workflowRoot = document.getElementById('workflow');
-const sourcesRoot = document.getElementById('sources');
 const agentsBody = document.getElementById('agentsBody');
 const eventsRoot = document.getElementById('events');
 const alertsRoot = document.getElementById('alerts');
@@ -71,25 +70,6 @@ function renderWorkflow(rows = []) {
     .join('');
 }
 
-function renderSources(rows = []) {
-  if (!rows.length) {
-    sourcesRoot.innerHTML = '<article class="workflow-item"><div>No source data</div></article>';
-    return;
-  }
-  sourcesRoot.innerHTML = rows
-    .map(
-      (row) => `
-      <article class="workflow-item">
-        <div><strong>${escapeHtml(row.source)}</strong></div>
-        <div>total: ${Number(row.total) || 0}</div>
-        <div>ok/warn/error: ${Number(row.ok) || 0}/${Number(row.warning) || 0}/${Number(row.error) || 0}</div>
-        <div>last: ${new Date(row.lastSeen).toLocaleTimeString()}</div>
-      </article>
-    `
-    )
-    .join('');
-}
-
 function getFilters() {
   return { status: eventStatusFilter.value, limit: Number(eventLimit.value) || 50, query: eventSearch.value };
 }
@@ -99,7 +79,6 @@ function renderSnapshot(snapshot) {
   renderCards(snapshot.totals);
   populateAgentFilter(snapshot.agents || [], agentFilter);
   renderWorkflow(snapshot.workflowProgress || recalcWorkflow(snapshot.agents));
-  renderSources(snapshot.sources || []);
   renderAgents(snapshot.agents || [], agentsBody, agentFilter.value);
   const allEvents = snapshot.recent || [];
   renderGraphs(allEvents, chartEls, numberFmt);
