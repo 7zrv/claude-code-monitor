@@ -51,7 +51,7 @@ describe('recalcWorkflow', () => {
 
   it('preserves all agent fields in output', () => {
     const agents = [
-      { agentId: 'alpha', error: 0, warning: 0, total: 3, lastEvent: 'ping', lastSeen: '2026-02-28T12:00:00Z' }
+      { agentId: 'alpha', error: 0, warning: 0, total: 3, lastEvent: 'ping', lastSeen: '2026-02-28T12:00:00Z', model: 'claude-opus-4-6' }
     ];
     const result = recalcWorkflow(agents);
     assert.deepStrictEqual(result[0], {
@@ -60,7 +60,8 @@ describe('recalcWorkflow', () => {
       status: 'running',
       total: 3,
       lastEvent: 'ping',
-      lastSeen: '2026-02-28T12:00:00Z'
+      lastSeen: '2026-02-28T12:00:00Z',
+      model: 'claude-opus-4-6'
     });
   });
 

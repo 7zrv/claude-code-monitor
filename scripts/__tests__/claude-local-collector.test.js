@@ -103,6 +103,30 @@ describe('sessionLineToEvent', () => {
       assert.equal(events[0].metadata.sessionId, 's1');
     });
 
+    it('uses agentId when present', () => {
+      const line = JSON.stringify({
+        type: 'user',
+        agentId: 'agent-abc',
+        isSidechain: true,
+        sessionId: 'abcdef1234567890',
+        message: { content: 'hi' }
+      });
+      const events = sessionLineToEvent(line);
+      assert.equal(events[0].agentId, 'agent-abc');
+      assert.equal(events[0].metadata.isSidechain, true);
+    });
+
+    it('falls back to lead-<sessionId8> when agentId missing', () => {
+      const line = JSON.stringify({
+        type: 'user',
+        sessionId: 'abcdef1234567890',
+        message: { content: 'hi' }
+      });
+      const events = sessionLineToEvent(line);
+      assert.equal(events[0].agentId, 'lead-abcdef12');
+      assert.equal(events[0].metadata.isSidechain, false);
+    });
+
     it('parses array content', () => {
       const line = JSON.stringify({
         type: 'user',
@@ -149,6 +173,22 @@ describe('sessionLineToEvent', () => {
       assert.equal(events[0].event, 'assistant_message');
       assert.equal(events[0].message, 'response');
       assert.equal(events[0].metadata.model, 'claude-3');
+    });
+
+    it('uses agentId for assistant messages', () => {
+      const line = JSON.stringify({
+        type: 'assistant',
+        agentId: 'agent-xyz',
+        isSidechain: true,
+        sessionId: 'sess12345678',
+        message: {
+          model: 'claude-haiku-4-5',
+          content: [{ type: 'text', text: 'ok' }]
+        }
+      });
+      const events = sessionLineToEvent(line);
+      assert.equal(events[0].agentId, 'agent-xyz');
+      assert.equal(events[0].metadata.isSidechain, true);
     });
 
     it('parses tool_use content', () => {
@@ -341,6 +381,22 @@ describe('walkJsonlFiles', () => {
 
     const result = await walkJsonlFiles(tmpDir);
     assert.equal(result.length, 2);
+  });
+
+  it('finds sub-agent files in subagents/ directory', async () => {
+    const session = join(tmpDir, 'session1');
+    const subagents = join(session, 'subagents');
+    await mkdir(subagents, { recursive: true });
+    await writeFile(join(session, 'lead.jsonl'), '');
+    await writeFile(join(subagents, 'agent-abc.jsonl'), '');
+    await writeFile(join(subagents, 'agent-def.jsonl'), '');
+    await writeFile(join(subagents, 'notes.txt'), ''); // should be ignored
+
+    const result = await walkJsonlFiles(tmpDir);
+    assert.equal(result.length, 3); // lead + 2 sub-agents
+    assert.ok(result.every((f) => f.endsWith('.jsonl')));
+    const subFiles = result.filter((f) => f.includes('subagents'));
+    assert.equal(subFiles.length, 2);
   });
 });
 

@@ -34,6 +34,9 @@ struct Event {
     metadata: Value,
     timestamp: String,
     received_at: String,
+    model: String,
+    is_sidechain: bool,
+    session_id: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -49,6 +52,9 @@ struct AgentRow {
     cost_usd: f64,
     last_event: String,
     latency_ms: Option<i64>,
+    model: String,
+    is_sidechain: bool,
+    session_id: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -234,12 +240,22 @@ fn append_event(app: &App, evt: Event) {
                 cost_usd: 0.0,
                 last_event: evt.event.clone(),
                 latency_ms: None,
+                model: evt.model.clone(),
+                is_sidechain: evt.is_sidechain,
+                session_id: evt.session_id.clone(),
             });
 
         row.last_seen = evt.received_at.clone();
         row.total += 1;
         row.last_event = evt.event.clone();
         row.latency_ms = evt.latency_ms;
+        if !evt.model.is_empty() {
+            row.model = evt.model.clone();
+        }
+        row.is_sidechain = evt.is_sidechain;
+        if !evt.session_id.is_empty() {
+            row.session_id = evt.session_id.clone();
+        }
         match evt.status.as_str() {
             "error" => row.error += 1,
             "warning" => row.warning += 1,
@@ -421,6 +437,11 @@ fn normalize_incoming(payload: &Value, app: &App) -> Event {
         .map(status_norm)
         .unwrap_or_else(|| "ok".to_string());
 
+    let meta = payload
+        .get("metadata")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+
     Event {
         id: format!("e{}", app.event_seq.fetch_add(1, Ordering::Relaxed)),
         agent_id: payload
@@ -440,10 +461,21 @@ fn normalize_incoming(payload: &Value, app: &App) -> Event {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string(),
-        metadata: payload
-            .get("metadata")
-            .cloned()
-            .unwrap_or_else(|| json!({})),
+        model: meta
+            .get("model")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        is_sidechain: meta
+            .get("isSidechain")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        session_id: meta
+            .get("sessionId")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        metadata: meta,
         timestamp: ts,
         received_at: now,
     }
@@ -689,6 +721,9 @@ fn parse_history_event(line: &str, app: &App) -> Option<Event> {
         }),
         timestamp: dt,
         received_at: now_iso(),
+        model: String::new(),
+        is_sidechain: false,
+        session_id: String::new(),
     })
 }
 
@@ -704,6 +739,18 @@ fn parse_session_line(line: &str, app: &App) -> Vec<Event> {
         .and_then(|s| s.as_str())
         .unwrap_or("")
         .to_string();
+    let is_sidechain = v
+        .get("isSidechain")
+        .and_then(|b| b.as_bool())
+        .unwrap_or(false);
+    let agent_id = v
+        .get("agentId")
+        .and_then(|a| a.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            let prefix: String = session_id.chars().take(8).collect();
+            format!("lead-{}", prefix)
+        });
     let timestamp = v
         .get("timestamp")
         .and_then(|t| t.as_str())
@@ -724,7 +771,7 @@ fn parse_session_line(line: &str, app: &App) -> Vec<Event> {
 
             vec![Event {
                 id: format!("e{}", app.event_seq.fetch_add(1, Ordering::Relaxed)),
-                agent_id: "lead".to_string(),
+                agent_id: agent_id.clone(),
                 event: "user_message".to_string(),
                 status: "ok".to_string(),
                 latency_ms: None,
@@ -732,9 +779,13 @@ fn parse_session_line(line: &str, app: &App) -> Vec<Event> {
                 metadata: json!({
                     "source": "claude_session",
                     "sessionId": session_id,
+                    "isSidechain": is_sidechain,
                 }),
                 timestamp,
                 received_at: now_iso(),
+                model: String::new(),
+                is_sidechain,
+                session_id: session_id.clone(),
             }]
         }
         "assistant" => {
@@ -758,7 +809,7 @@ fn parse_session_line(line: &str, app: &App) -> Vec<Event> {
                                         "e{}",
                                         app.event_seq.fetch_add(1, Ordering::Relaxed)
                                     ),
-                                    agent_id: "lead".to_string(),
+                                    agent_id: agent_id.clone(),
                                     event: "assistant_message".to_string(),
                                     status: "ok".to_string(),
                                     latency_ms: None,
@@ -767,9 +818,13 @@ fn parse_session_line(line: &str, app: &App) -> Vec<Event> {
                                         "source": "claude_session",
                                         "sessionId": session_id,
                                         "model": model,
+                                        "isSidechain": is_sidechain,
                                     }),
                                     timestamp: timestamp.clone(),
                                     received_at: now_iso(),
+                                    model: model.clone(),
+                                    is_sidechain,
+                                    session_id: session_id.clone(),
                                 });
                             }
                         }
@@ -781,7 +836,7 @@ fn parse_session_line(line: &str, app: &App) -> Vec<Event> {
                             let input = item.get("input").cloned().unwrap_or(json!({}));
                             events.push(Event {
                                 id: format!("e{}", app.event_seq.fetch_add(1, Ordering::Relaxed)),
-                                agent_id: "lead".to_string(),
+                                agent_id: agent_id.clone(),
                                 event: "tool_call".to_string(),
                                 status: "ok".to_string(),
                                 latency_ms: None,
@@ -790,10 +845,14 @@ fn parse_session_line(line: &str, app: &App) -> Vec<Event> {
                                     "source": "claude_session",
                                     "sessionId": session_id,
                                     "model": model,
+                                    "isSidechain": is_sidechain,
                                     "toolInput": input,
                                 }),
                                 timestamp: timestamp.clone(),
                                 received_at: now_iso(),
+                                model: model.clone(),
+                                is_sidechain,
+                                session_id: session_id.clone(),
                             });
                         }
                         _ => {}
@@ -819,7 +878,7 @@ fn parse_session_line(line: &str, app: &App) -> Vec<Event> {
                 if total > 0 {
                     events.push(Event {
                         id: format!("e{}", app.event_seq.fetch_add(1, Ordering::Relaxed)),
-                        agent_id: "lead".to_string(),
+                        agent_id: agent_id.clone(),
                         event: "token_usage".to_string(),
                         status: "ok".to_string(),
                         latency_ms: None,
@@ -828,6 +887,7 @@ fn parse_session_line(line: &str, app: &App) -> Vec<Event> {
                             "source": "claude_session",
                             "sessionId": session_id,
                             "model": model,
+                            "isSidechain": is_sidechain,
                             "tokenUsage": {
                                 "inputTokens": input_tokens,
                                 "outputTokens": output_tokens,
@@ -837,6 +897,9 @@ fn parse_session_line(line: &str, app: &App) -> Vec<Event> {
                         }),
                         timestamp: timestamp.clone(),
                         received_at: now_iso(),
+                        model: model.clone(),
+                        is_sidechain,
+                        session_id: session_id.clone(),
                     });
                 }
             }
@@ -864,6 +927,25 @@ fn walk_jsonl_files(dir: &Path) -> Vec<PathBuf> {
                         && sub_path.extension().map(|e| e == "jsonl").unwrap_or(false)
                     {
                         result.push(sub_path);
+                    } else if sub_path.is_dir()
+                        && sub_path
+                            .file_name()
+                            .map(|n| n == "subagents")
+                            .unwrap_or(false)
+                    {
+                        if let Ok(agent_entries) = std::fs::read_dir(&sub_path) {
+                            for agent_entry in agent_entries.flatten() {
+                                let agent_path = agent_entry.path();
+                                if agent_path.is_file()
+                                    && agent_path
+                                        .extension()
+                                        .map(|e| e == "jsonl")
+                                        .unwrap_or(false)
+                                {
+                                    result.push(agent_path);
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -948,6 +1030,9 @@ fn poll_stats_cache(
         }),
         timestamp: now_iso(),
         received_at: now_iso(),
+        model: String::new(),
+        is_sidechain: false,
+        session_id: String::new(),
     })
 }
 
@@ -1123,6 +1208,9 @@ mod tests {
             metadata,
             timestamp: "2025-01-01T00:00:00Z".to_string(),
             received_at: "2025-01-01T00:00:00Z".to_string(),
+            model: String::new(),
+            is_sidechain: false,
+            session_id: String::new(),
         }
     }
 
@@ -1248,6 +1336,9 @@ mod tests {
                 cost_usd: 0.0,
                 last_event: "heartbeat".to_string(),
                 latency_ms: None,
+                model: String::new(),
+                is_sidechain: false,
+                session_id: String::new(),
             },
         );
         let row = workflow_row(&state, "agent-1");
@@ -1272,6 +1363,9 @@ mod tests {
                 cost_usd: 0.0,
                 last_event: "warn".to_string(),
                 latency_ms: None,
+                model: String::new(),
+                is_sidechain: false,
+                session_id: String::new(),
             },
         );
         let row = workflow_row(&state, "agent-1");
@@ -1294,6 +1388,9 @@ mod tests {
                 cost_usd: 0.0,
                 last_event: "error".to_string(),
                 latency_ms: None,
+                model: String::new(),
+                is_sidechain: false,
+                session_id: String::new(),
             },
         );
         let row = workflow_row(&state, "agent-1");
@@ -1328,6 +1425,9 @@ mod tests {
                 cost_usd: 0.5,
                 last_event: "test".to_string(),
                 latency_ms: Some(42),
+                model: String::new(),
+                is_sidechain: false,
+                session_id: String::new(),
             },
         );
         state.by_agent.insert(
@@ -1343,6 +1443,9 @@ mod tests {
                 cost_usd: 0.1,
                 last_event: "ok".to_string(),
                 latency_ms: None,
+                model: String::new(),
+                is_sidechain: false,
+                session_id: String::new(),
             },
         );
         let snap = build_snapshot(&state);
@@ -1651,6 +1754,28 @@ mod tests {
     }
 
     #[test]
+    fn test_walk_jsonl_files_finds_subagent_files() {
+        let dir = unique_tmp_dir("walk_sub");
+        let session = dir.join("session1");
+        let subagents = session.join("subagents");
+        std::fs::create_dir_all(&subagents).unwrap();
+        File::create(session.join("lead.jsonl")).unwrap();
+        File::create(subagents.join("agent-abc.jsonl")).unwrap();
+        File::create(subagents.join("agent-def.jsonl")).unwrap();
+        File::create(subagents.join("notes.txt")).unwrap(); // should be ignored
+
+        let files = walk_jsonl_files(&dir);
+        assert_eq!(files.len(), 3); // lead + 2 sub-agents
+        assert!(files.iter().all(|p| p.extension().unwrap() == "jsonl"));
+        let sub_files: Vec<_> = files
+            .iter()
+            .filter(|p| p.to_string_lossy().contains("subagents"))
+            .collect();
+        assert_eq!(sub_files.len(), 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn test_walk_jsonl_files_nonexistent_dir() {
         let files = walk_jsonl_files(&std::env::temp_dir().join("ccm_nonexistent_dir_xyz"));
         assert!(files.is_empty());
@@ -1751,6 +1876,62 @@ mod tests {
         let line = r#"{"type":"assistant","message":{"model":"m","content":[{"type":"text","text":""}]},"sessionId":"s1","timestamp":"2025-01-01T00:00:00Z"}"#;
         let events = parse_session_line(line, &app);
         assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_parse_session_line_subagent_uses_agent_id() {
+        let app = make_test_app();
+        let line = r#"{"type":"assistant","agentId":"agent-abc","isSidechain":true,"message":{"model":"claude-haiku-4-5","content":[{"type":"text","text":"hi"}]},"sessionId":"abcdef1234567890","timestamp":"2025-01-01T00:00:00Z"}"#;
+        let events = parse_session_line(line, &app);
+        assert_eq!(events[0].agent_id, "agent-abc");
+        assert!(events[0].is_sidechain);
+        assert_eq!(events[0].model, "claude-haiku-4-5");
+        assert_eq!(events[0].session_id, "abcdef1234567890");
+    }
+
+    #[test]
+    fn test_parse_session_line_lead_uses_session_prefix() {
+        let app = make_test_app();
+        let line = r#"{"type":"user","message":{"content":"hi"},"sessionId":"abcdef1234567890","timestamp":"2025-01-01T00:00:00Z"}"#;
+        let events = parse_session_line(line, &app);
+        assert_eq!(events[0].agent_id, "lead-abcdef12");
+        assert!(!events[0].is_sidechain);
+        assert_eq!(events[0].session_id, "abcdef1234567890");
+    }
+
+    #[test]
+    fn test_parse_session_line_is_sidechain_false_by_default() {
+        let app = make_test_app();
+        let line = r#"{"type":"user","message":{"content":"hi"},"sessionId":"s1","timestamp":"2025-01-01T00:00:00Z"}"#;
+        let events = parse_session_line(line, &app);
+        assert!(!events[0].is_sidechain);
+    }
+
+    #[test]
+    fn test_parse_history_event_keeps_lead() {
+        let app = make_test_app();
+        let line = r#"{"text":"hello","ts":1700000000,"session_id":"s1"}"#;
+        let evt = parse_history_event(line, &app).unwrap();
+        assert_eq!(evt.agent_id, "lead");
+        assert!(!evt.is_sidechain);
+    }
+
+    #[test]
+    fn test_normalize_incoming_extracts_model_from_metadata() {
+        let app = make_test_app();
+        let payload = json!({
+            "agentId": "agent-x",
+            "event": "test",
+            "metadata": {
+                "model": "claude-opus-4-6",
+                "isSidechain": true,
+                "sessionId": "sess123"
+            }
+        });
+        let evt = normalize_incoming(&payload, &app);
+        assert_eq!(evt.model, "claude-opus-4-6");
+        assert!(evt.is_sidechain);
+        assert_eq!(evt.session_id, "sess123");
     }
 
     #[test]
@@ -2022,6 +2203,9 @@ mod tests {
                 cost_usd: 0.0,
                 last_event: "-".to_string(),
                 latency_ms: None,
+                model: String::new(),
+                is_sidechain: false,
+                session_id: String::new(),
             },
         );
         let row = workflow_row(&state, "agent-1");
@@ -2135,6 +2319,16 @@ mod tests {
         broadcast_sse(&app_ref, "trigger_exit".to_string());
 
         handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_parse_session_line_multibyte_session_id_no_panic() {
+        let app = make_test_app();
+        let line = r#"{"type":"user","message":{"content":"hi"},"sessionId":"한글세션아이디입니다","timestamp":"2025-01-01T00:00:00Z"}"#;
+        let events = parse_session_line(line, &app);
+        assert!(!events.is_empty());
+        // Must not panic on multi-byte chars; prefix should be first 8 chars
+        assert_eq!(events[0].agent_id, "lead-한글세션아이디입");
     }
 
     #[test]

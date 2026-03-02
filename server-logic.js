@@ -38,9 +38,11 @@ export function buildSnapshot(state) {
       acc.ok += row.ok;
       acc.warning += row.warning;
       acc.error += row.error;
+      acc.tokenTotal += row.tokenTotal || 0;
+      acc.costTotalUsd += row.costUsd || 0;
       return acc;
     },
-    { agents: agentRows.length, total: 0, ok: 0, warning: 0, error: 0 }
+    { agents: agentRows.length, total: 0, ok: 0, warning: 0, error: 0, tokenTotal: 0, costTotalUsd: 0 }
   );
   const sources = [...state.bySource.values()].sort((a, b) => a.source.localeCompare(b.source));
 
