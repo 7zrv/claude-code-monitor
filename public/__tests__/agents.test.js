@@ -116,4 +116,61 @@ describe('agentRowHtml', () => {
     assert.ok(html.includes('&lt;xss&gt;'));
     assert.ok(!html.includes('<xss>'));
   });
+
+  it('includes active activity dot when lastSeen is recent', () => {
+    resetDisplayNames();
+    const now = Date.now();
+    const row = {
+      agentId: 'agent-1',
+      model: 'claude-3',
+      lastSeen: new Date(now - 5_000).toISOString(),
+      total: 10,
+      ok: 10,
+      warning: 0,
+      error: 0,
+      tokenTotal: 0,
+      lastEvent: 'Run',
+      latencyMs: null
+    };
+    const html = agentRowHtml(row, false, false, now);
+    assert.ok(html.includes('activity-dot--active'));
+  });
+
+  it('includes idle activity dot when lastSeen is old', () => {
+    resetDisplayNames();
+    const now = Date.now();
+    const row = {
+      agentId: 'agent-2',
+      model: '',
+      lastSeen: new Date(now - 300_000).toISOString(),
+      total: 1,
+      ok: 1,
+      warning: 0,
+      error: 0,
+      tokenTotal: 0,
+      lastEvent: 'Done',
+      latencyMs: null
+    };
+    const html = agentRowHtml(row, false, false, now);
+    assert.ok(html.includes('activity-dot--idle'));
+  });
+
+  it('includes recent activity dot between 30s and 2min', () => {
+    resetDisplayNames();
+    const now = Date.now();
+    const row = {
+      agentId: 'agent-3',
+      model: '',
+      lastSeen: new Date(now - 60_000).toISOString(),
+      total: 1,
+      ok: 1,
+      warning: 0,
+      error: 0,
+      tokenTotal: 0,
+      lastEvent: 'X',
+      latencyMs: null
+    };
+    const html = agentRowHtml(row, false, false, now);
+    assert.ok(html.includes('activity-dot--recent'));
+  });
 });

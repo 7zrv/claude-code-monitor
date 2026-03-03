@@ -1,19 +1,20 @@
-import { escapeHtml } from '../utils.js';
+import { escapeHtml, getActivityStatus, activityDotHtml } from '../utils.js';
 import { displayNameFor } from '../agent-display.js';
 import { buildAgentTree } from '../agent-tree.js';
 
 const numberFmt = new Intl.NumberFormat('ko-KR');
 
-export function agentRowHtml(row, isChild, isLastChild) {
+export function agentRowHtml(row, isChild, isLastChild, now = Date.now()) {
   const prefix = isChild ? '<span class="tree-branch"></span>' : '';
   const classes = [isChild && 'tree-child', isLastChild && 'tree-last'].filter(Boolean).join(' ');
   const cls = classes ? ` class="${classes}"` : '';
   const modelBadge = row.model
     ? `<span class="model-badge">${escapeHtml(row.model)}</span>`
     : '-';
+  const dot = activityDotHtml(getActivityStatus(row.lastSeen, now));
   return `
     <tr${cls}>
-      <td>${prefix}<span class="badge" title="${escapeHtml(row.agentId)}">${escapeHtml(displayNameFor(row.agentId))}</span></td>
+      <td>${prefix}${dot}<span class="badge" title="${escapeHtml(row.agentId)}">${escapeHtml(displayNameFor(row.agentId))}</span></td>
       <td>${modelBadge}</td>
       <td>${new Date(row.lastSeen).toLocaleTimeString()}</td>
       <td>${Number(row.total) || 0}</td>
