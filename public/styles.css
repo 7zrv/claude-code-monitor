@@ -599,6 +599,35 @@ tbody tr:hover td {
   }
 }
 
+/* ── Activity dot styles ── */
+.activity-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.activity-dot--active {
+  background: var(--color-ok);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.activity-dot--recent {
+  background: var(--color-warning);
+}
+
+.activity-dot--idle {
+  background: var(--warm-text);
+  opacity: 0.35;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.3); }
+}
+
 /* ── Agent tree styles ── */
 tr.tree-child td:first-child {
   padding-left: 28px;

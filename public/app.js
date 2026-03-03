@@ -1,6 +1,6 @@
 import { recalcWorkflow } from './lib/workflow.js';
 import { buildCardData } from './lib/cards.js';
-import { escapeHtml, statusPill } from './lib/utils.js';
+import { escapeHtml, statusPill, getActivityStatus, activityDotHtml, countActiveAgents } from './lib/utils.js';
 import { applyIncrementalEvent } from './lib/state.js';
 import { saveFilters, loadFilters } from './lib/persistence.js';
 import { connectStream, loadSnapshot } from './lib/connection.js';
@@ -51,8 +51,9 @@ function queueRender() {
   });
 }
 
-function renderCards(totals) {
-  const cards = buildCardData(totals, numberFmt);
+function renderCards(totals, agents = []) {
+  const activeAgents = countActiveAgents(agents);
+  const cards = buildCardData(totals, numberFmt, activeAgents);
   cardsRoot.innerHTML = cards
     .map(
       ([label, value, type]) =>
@@ -62,11 +63,12 @@ function renderCards(totals) {
 }
 
 function renderWorkflow(rows = []) {
+  const now = Date.now();
   workflowRoot.innerHTML = rows
     .map(
       (row) => `
       <article class="workflow-item">
-        <div><strong>${escapeHtml(row.roleId)}</strong></div>
+        <div>${activityDotHtml(getActivityStatus(row.lastSeen, now))}<strong>${escapeHtml(row.roleId)}</strong></div>
         <div>${statusPill(row.status)}</div>
         <div>events: ${Number(row.total) || 0}</div>
         <div>last: ${escapeHtml(row.lastEvent)}</div>
@@ -82,7 +84,7 @@ function getFilters() {
 
 function renderSnapshot(snapshot) {
   snapshotState = snapshot;
-  renderCards(snapshot.totals);
+  renderCards(snapshot.totals, snapshot.agents || []);
   populateAgentFilter(snapshot.agents || [], agentFilter);
   renderWorkflow(snapshot.workflowProgress || recalcWorkflow(snapshot.agents));
   renderAgents(snapshot.agents || [], agentsBody, agentFilter.value);
@@ -147,3 +149,10 @@ connectStream({
   },
   onFallback() { loadSnapshot().then((snapshot) => renderSnapshot(snapshot)).catch(console.error); }
 });
+
+setInterval(() => {
+  if (!snapshotState || renderQueued) return;
+  renderCards(snapshotState.totals, snapshotState.agents || []);
+  renderWorkflow(snapshotState.workflowProgress || recalcWorkflow(snapshotState.agents));
+  renderAgents(snapshotState.agents || [], agentsBody, agentFilter.value);
+}, 1000);

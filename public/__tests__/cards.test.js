@@ -36,25 +36,30 @@ describe('buildCardData', () => {
     assert.equal(costCard[1], '0.0000');
   });
 
-  it('returns 7 cards total', () => {
+  it('returns 8 cards total', () => {
     const totals = { agents: 1, total: 5, tokenTotal: 100, ok: 3, warning: 1, error: 1, costTotalUsd: 1.5 };
     const cards = buildCardData(totals, numberFmt);
-    assert.equal(cards.length, 7);
+    assert.equal(cards.length, 8);
   });
 
   it('formats non-cost values with numberFmt', () => {
     const totals = { agents: 1000, total: 5000, tokenTotal: 0, ok: 0, warning: 0, error: 0, costTotalUsd: 0 };
     const cards = buildCardData(totals, numberFmt);
-    assert.equal(cards[0][1], '1,000');
-    assert.equal(cards[1][1], '5,000');
+    const agentsCard = cards.find(([l]) => l === 'Agents');
+    const totalCard = cards.find(([l]) => l === 'Total Events');
+    assert.equal(agentsCard[1], '1,000');
+    assert.equal(totalCard[1], '5,000');
   });
 
   it('shows 0 for undefined numeric fields', () => {
     const totals = {};
     const cards = buildCardData(totals, numberFmt);
-    assert.equal(cards[0][1], '0');   // Agents
-    assert.equal(cards[3][1], '0');   // OK
-    assert.equal(cards[6][1], '0.0000'); // Cost (USD)
+    const agentsCard = cards.find(([l]) => l === 'Agents');
+    const okCard = cards.find(([l]) => l === 'OK');
+    const costCard = cards.find(([l]) => l === 'Cost (USD)');
+    assert.equal(agentsCard[1], '0');
+    assert.equal(okCard[1], '0');
+    assert.equal(costCard[1], '0.0000');
   });
 
   it('assigns ok type to OK card', () => {
@@ -86,5 +91,32 @@ describe('buildCardData', () => {
       const card = cards.find(([l]) => l === label);
       assert.equal(card[2], 'neutral', `${label} should have neutral type`);
     }
+  });
+
+  it('includes Active card with ok type when activeAgents > 0', () => {
+    const totals = { agents: 2, total: 5, tokenTotal: 100, ok: 3, warning: 1, error: 1, costTotalUsd: 0 };
+    const cards = buildCardData(totals, numberFmt, 2);
+    const activeCard = cards.find(([label]) => label === 'Active');
+    assert.ok(activeCard, 'Active card should exist');
+    assert.equal(activeCard[1], '2');
+    assert.equal(activeCard[2], 'ok');
+  });
+
+  it('includes Active card with neutral type when activeAgents is 0', () => {
+    const totals = { agents: 2, total: 5, tokenTotal: 100, ok: 3, warning: 1, error: 1, costTotalUsd: 0 };
+    const cards = buildCardData(totals, numberFmt, 0);
+    const activeCard = cards.find(([label]) => label === 'Active');
+    assert.ok(activeCard, 'Active card should exist');
+    assert.equal(activeCard[1], '0');
+    assert.equal(activeCard[2], 'neutral');
+  });
+
+  it('defaults activeAgents to 0 when not provided', () => {
+    const totals = { agents: 1, total: 0, tokenTotal: 0, ok: 0, warning: 0, error: 0 };
+    const cards = buildCardData(totals, numberFmt);
+    const activeCard = cards.find(([label]) => label === 'Active');
+    assert.ok(activeCard, 'Active card should exist');
+    assert.equal(activeCard[1], '0');
+    assert.equal(activeCard[2], 'neutral');
   });
 });
