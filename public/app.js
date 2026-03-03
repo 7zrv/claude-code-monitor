@@ -8,6 +8,7 @@ import { renderGraphs } from './lib/renders/charts.js';
 import { getFilteredEvents, renderEventMeta, renderEvents } from './lib/renders/events.js';
 import { renderAgents, populateAgentFilter } from './lib/renders/agents.js';
 import { renderAlerts } from './lib/renders/alerts.js';
+import { renderTimeline } from './lib/renders/timeline.js';
 
 const cardsRoot = document.getElementById('cards');
 const workflowRoot = document.getElementById('workflow');
@@ -22,6 +23,8 @@ const eventStatusFilter = document.getElementById('eventStatusFilter');
 const eventLimit = document.getElementById('eventLimit');
 const eventSearch = document.getElementById('eventSearch');
 const eventMetaEl = document.getElementById('eventMeta');
+const timelineRoot = document.getElementById('timeline');
+const timelineTooltip = document.getElementById('timelineTooltip');
 
 const chartEls = {
   throughputChart: document.getElementById('throughputChart'),
@@ -85,6 +88,7 @@ function renderSnapshot(snapshot) {
   renderAgents(snapshot.agents || [], agentsBody, agentFilter.value);
   const allEvents = snapshot.recent || [];
   renderGraphs(allEvents, chartEls, numberFmt, snapshot.toolCallStats);
+  renderTimeline(allEvents, timelineRoot, timelineTooltip, agentFilter.value);
   const filteredEvents = getFilteredEvents(allEvents, getFilters());
   renderEvents(filteredEvents, eventsRoot);
   renderEventMeta(allEvents.length, filteredEvents.length, eventMetaEl);
@@ -113,7 +117,10 @@ function refilterEvents() {
 }
 
 agentFilter.addEventListener('change', () => {
-  if (snapshotState) renderAgents(snapshotState.agents || [], agentsBody, agentFilter.value);
+  if (snapshotState) {
+    renderAgents(snapshotState.agents || [], agentsBody, agentFilter.value);
+    renderTimeline(snapshotState.recent || [], timelineRoot, timelineTooltip, agentFilter.value);
+  }
 });
 
 for (const el of [eventStatusFilter, eventLimit]) {
