@@ -719,6 +719,37 @@ tr.tree-last .tree-branch::before {
   margin-bottom: 4px;
 }
 
+.timeline-scroll {
+  position: relative;
+  overflow-x: auto;
+  padding: 4px 0;
+}
+
+.timeline {
+  min-height: 60px;
+}
+
+.timeline-svg {
+  display: block;
+}
+
+.timeline-dot {
+  cursor: pointer;
+  transition: r 0.12s ease, opacity 0.12s ease;
+}
+
+.timeline-dot:hover {
+  r: 9;
+  opacity: 0.85;
+}
+
+.timeline-empty {
+  text-align: center;
+  padding: 20px;
+  opacity: 0.6;
+  font-size: 13px;
+}
+
 .drilldown-tool-input {
   grid-column: 1 / -1;
   margin: 4px 0 0;
