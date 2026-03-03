@@ -5,6 +5,28 @@ import { buildCardData } from '../lib/cards.js';
 const numberFmt = new Intl.NumberFormat('ko-KR');
 
 describe('buildCardData', () => {
+  it('returns 4 cards total', () => {
+    const totals = { agents: 1, total: 5, tokenTotal: 100, ok: 3, warning: 1, error: 1, costTotalUsd: 1.5 };
+    const cards = buildCardData(totals, numberFmt);
+    assert.equal(cards.length, 4);
+  });
+
+  it('includes only Active, Error, Total Tokens, Cost (USD) cards', () => {
+    const totals = { agents: 2, total: 10, tokenTotal: 500, ok: 7, warning: 2, error: 1, costTotalUsd: 0.05 };
+    const cards = buildCardData(totals, numberFmt, 1);
+    const labels = cards.map(([label]) => label);
+    assert.deepEqual(labels, ['Active', 'Error', 'Total Tokens', 'Cost (USD)']);
+  });
+
+  it('does not include removed cards', () => {
+    const totals = { agents: 2, total: 10, tokenTotal: 500, ok: 7, warning: 2, error: 1, costTotalUsd: 0.05 };
+    const cards = buildCardData(totals, numberFmt);
+    const labels = cards.map(([label]) => label);
+    for (const removed of ['Agents', 'Total Events', 'OK', 'Warning']) {
+      assert.ok(!labels.includes(removed), `${removed} card should not exist`);
+    }
+  });
+
   it('includes Cost (USD) card with 4 decimal places', () => {
     const totals = {
       agents: 2,
@@ -36,58 +58,44 @@ describe('buildCardData', () => {
     assert.equal(costCard[1], '0.0000');
   });
 
-  it('returns 8 cards total', () => {
-    const totals = { agents: 1, total: 5, tokenTotal: 100, ok: 3, warning: 1, error: 1, costTotalUsd: 1.5 };
+  it('formats token values with numberFmt', () => {
+    const totals = { agents: 1, total: 5000, tokenTotal: 50000, ok: 0, warning: 0, error: 0, costTotalUsd: 0 };
     const cards = buildCardData(totals, numberFmt);
-    assert.equal(cards.length, 8);
-  });
-
-  it('formats non-cost values with numberFmt', () => {
-    const totals = { agents: 1000, total: 5000, tokenTotal: 0, ok: 0, warning: 0, error: 0, costTotalUsd: 0 };
-    const cards = buildCardData(totals, numberFmt);
-    const agentsCard = cards.find(([l]) => l === 'Agents');
-    const totalCard = cards.find(([l]) => l === 'Total Events');
-    assert.equal(agentsCard[1], '1,000');
-    assert.equal(totalCard[1], '5,000');
+    const tokenCard = cards.find(([l]) => l === 'Total Tokens');
+    assert.equal(tokenCard[1], '50,000');
   });
 
   it('shows 0 for undefined numeric fields', () => {
     const totals = {};
     const cards = buildCardData(totals, numberFmt);
-    const agentsCard = cards.find(([l]) => l === 'Agents');
-    const okCard = cards.find(([l]) => l === 'OK');
+    const activeCard = cards.find(([l]) => l === 'Active');
+    const errorCard = cards.find(([l]) => l === 'Error');
+    const tokenCard = cards.find(([l]) => l === 'Total Tokens');
     const costCard = cards.find(([l]) => l === 'Cost (USD)');
-    assert.equal(agentsCard[1], '0');
-    assert.equal(okCard[1], '0');
+    assert.equal(activeCard[1], '0');
+    assert.equal(errorCard[1], '0');
+    assert.equal(tokenCard[1], '0');
     assert.equal(costCard[1], '0.0000');
   });
 
-  it('assigns ok type to OK card', () => {
-    const totals = { agents: 1, total: 1, tokenTotal: 0, ok: 1, warning: 0, error: 0, costTotalUsd: 0 };
-    const cards = buildCardData(totals, numberFmt);
-    const okCard = cards.find(([label]) => label === 'OK');
-    assert.equal(okCard[2], 'ok');
-  });
-
-  it('assigns warning type to Warning card', () => {
-    const totals = { agents: 1, total: 1, tokenTotal: 0, ok: 0, warning: 1, error: 0, costTotalUsd: 0 };
-    const cards = buildCardData(totals, numberFmt);
-    const warningCard = cards.find(([label]) => label === 'Warning');
-    assert.equal(warningCard[2], 'warning');
-  });
-
-  it('assigns error type to Error card', () => {
+  it('assigns error type to Error card when error > 0', () => {
     const totals = { agents: 1, total: 1, tokenTotal: 0, ok: 0, warning: 0, error: 1, costTotalUsd: 0 };
     const cards = buildCardData(totals, numberFmt);
     const errorCard = cards.find(([label]) => label === 'Error');
     assert.equal(errorCard[2], 'error');
   });
 
-  it('assigns neutral type to non-status cards', () => {
+  it('assigns neutral type to Error card when error is 0', () => {
+    const totals = { agents: 1, total: 1, tokenTotal: 0, ok: 0, warning: 0, error: 0, costTotalUsd: 0 };
+    const cards = buildCardData(totals, numberFmt);
+    const errorCard = cards.find(([label]) => label === 'Error');
+    assert.equal(errorCard[2], 'neutral');
+  });
+
+  it('assigns neutral type to Total Tokens and Cost cards', () => {
     const totals = { agents: 1, total: 5, tokenTotal: 100, ok: 3, warning: 1, error: 1, costTotalUsd: 1.5 };
     const cards = buildCardData(totals, numberFmt);
-    const neutralLabels = ['Agents', 'Total Events', 'Total Tokens', 'Cost (USD)'];
-    for (const label of neutralLabels) {
+    for (const label of ['Total Tokens', 'Cost (USD)']) {
       const card = cards.find(([l]) => l === label);
       assert.equal(card[2], 'neutral', `${label} should have neutral type`);
     }
