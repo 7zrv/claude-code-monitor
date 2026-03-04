@@ -486,6 +486,13 @@ tbody tr:hover td {
   opacity: 0.6;
 }
 
+.status-pill[data-status='completed'] {
+  border-style: dashed;
+  border-color: var(--color-ok);
+  color: var(--color-ok);
+  opacity: 0.5;
+}
+
 .status-pill[data-status='connected'] {
   border-color: var(--color-ok);
   color: var(--color-ok);
