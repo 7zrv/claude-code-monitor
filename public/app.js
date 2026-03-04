@@ -68,7 +68,7 @@ function renderWorkflow(rows = []) {
     .map(
       (row) => `
       <article class="workflow-item">
-        <div>${activityDotHtml(getActivityStatus(row.lastSeen, now))}<strong>${escapeHtml(row.roleId)}</strong></div>
+        <div>${activityDotHtml(getActivityStatus(row.lastSeen, now))}<strong>${escapeHtml(row.displayName || row.roleId)}</strong></div>
         <div>${statusPill(row.status)}</div>
         <div>events: ${Number(row.total) || 0}</div>
         <div>last: ${escapeHtml(row.lastEvent)}</div>

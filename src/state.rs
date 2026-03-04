@@ -25,6 +25,7 @@ pub fn workflow_row(state: &State, role_id: &str) -> WorkflowRow {
             total: row.total,
             last_event: row.last_event.clone(),
             last_seen: Some(row.last_seen.clone()),
+            display_name: row.display_name.clone(),
         }
     } else {
         WorkflowRow {
@@ -34,6 +35,7 @@ pub fn workflow_row(state: &State, role_id: &str) -> WorkflowRow {
             total: 0,
             last_event: "-".to_string(),
             last_seen: None,
+            display_name: String::new(),
         }
     }
 }
@@ -110,6 +112,7 @@ pub fn append_event(app: &App, evt: Event) {
                 is_sidechain: evt.is_sidechain,
                 session_id: evt.session_id.clone(),
                 tool_use_counts: std::collections::HashMap::new(),
+                display_name: String::new(),
             });
 
         row.last_seen = evt.received_at.clone();
@@ -123,6 +126,19 @@ pub fn append_event(app: &App, evt: Event) {
         if !evt.session_id.is_empty() {
             row.session_id = evt.session_id.clone();
         }
+        if (evt.event == "user_message" || evt.event == "user_request")
+            && row.display_name.is_empty()
+            && !evt.message.is_empty()
+        {
+            let mut chars = evt.message.chars();
+            let truncated: String = chars.by_ref().take(40).collect();
+            if chars.next().is_some() {
+                row.display_name = format!("{}...", truncated);
+            } else {
+                row.display_name = truncated;
+            }
+        }
+
         match evt.status.as_str() {
             "error" => row.error += 1,
             "warning" => row.warning += 1,
@@ -296,6 +312,7 @@ mod tests {
                 is_sidechain: false,
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
+                display_name: String::new(),
             },
         );
         let row = workflow_row(&state, "agent-1");
@@ -324,6 +341,7 @@ mod tests {
                 is_sidechain: false,
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
+                display_name: String::new(),
             },
         );
         let row = workflow_row(&state, "agent-1");
@@ -350,6 +368,7 @@ mod tests {
                 is_sidechain: false,
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
+                display_name: String::new(),
             },
         );
         let row = workflow_row(&state, "agent-1");
@@ -376,6 +395,7 @@ mod tests {
                 is_sidechain: false,
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
+                display_name: String::new(),
             },
         );
         let row = workflow_row(&state, "agent-1");
@@ -415,6 +435,7 @@ mod tests {
                 is_sidechain: false,
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
+                display_name: String::new(),
             },
         );
         state.by_agent.insert(
@@ -434,6 +455,7 @@ mod tests {
                 is_sidechain: false,
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
+                display_name: String::new(),
             },
         );
         let snap = build_snapshot(&state);
@@ -660,5 +682,78 @@ mod tests {
         append_event(&app, make_test_event("ok", "user_message", "a1", json!({})));
         let state = app.state.lock().unwrap();
         assert!(state.tool_use_counts.is_empty());
+    }
+
+    #[test]
+    fn test_append_event_sets_display_name_on_first_user_message() {
+        let app = make_test_app();
+        let mut evt = make_test_event("ok", "user_message", "a1", json!({}));
+        evt.message = "Fix the login bug".to_string();
+        append_event(&app, evt);
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.by_agent["a1"].display_name, "Fix the login bug");
+    }
+
+    #[test]
+    fn test_append_event_sets_display_name_on_user_request() {
+        let app = make_test_app();
+        let mut evt = make_test_event("ok", "user_request", "a1", json!({}));
+        evt.message = "Add dark mode".to_string();
+        append_event(&app, evt);
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.by_agent["a1"].display_name, "Add dark mode");
+    }
+
+    #[test]
+    fn test_append_event_truncates_display_name_at_40_chars() {
+        let app = make_test_app();
+        let mut evt = make_test_event("ok", "user_message", "a1", json!({}));
+        evt.message = "This is a very long message that exceeds forty characters limit".to_string();
+        append_event(&app, evt);
+        let state = app.state.lock().unwrap();
+        assert_eq!(
+            state.by_agent["a1"].display_name,
+            "This is a very long message that exceeds..."
+        );
+    }
+
+    #[test]
+    fn test_append_event_does_not_overwrite_existing_display_name() {
+        let app = make_test_app();
+        let mut evt1 = make_test_event("ok", "user_message", "a1", json!({}));
+        evt1.message = "First message".to_string();
+        append_event(&app, evt1);
+        let mut evt2 = make_test_event("ok", "user_message", "a1", json!({}));
+        evt2.message = "Second message".to_string();
+        append_event(&app, evt2);
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.by_agent["a1"].display_name, "First message");
+    }
+
+    #[test]
+    fn test_workflow_row_includes_display_name() {
+        let mut state = State::default();
+        state.by_agent.insert(
+            "agent-1".to_string(),
+            AgentRow {
+                agent_id: "agent-1".to_string(),
+                last_seen: "2025-01-01T00:00:00Z".to_string(),
+                total: 1,
+                ok: 1,
+                warning: 0,
+                error: 0,
+                token_total: 0,
+                cost_usd: 0.0,
+                last_event: "ping".to_string(),
+                latency_ms: None,
+                model: String::new(),
+                is_sidechain: false,
+                session_id: String::new(),
+                tool_use_counts: std::collections::HashMap::new(),
+                display_name: "Fix login bug".to_string(),
+            },
+        );
+        let row = workflow_row(&state, "agent-1");
+        assert_eq!(row.display_name, "Fix login bug");
     }
 }

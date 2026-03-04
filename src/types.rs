@@ -48,6 +48,7 @@ pub struct AgentRow {
     pub is_sidechain: bool,
     pub session_id: String,
     pub tool_use_counts: HashMap<String, u64>,
+    pub display_name: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -81,6 +82,7 @@ pub struct WorkflowRow {
     pub total: u64,
     pub last_event: String,
     pub last_seen: Option<String>,
+    pub display_name: String,
 }
 
 #[derive(Default)]
