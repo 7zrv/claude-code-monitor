@@ -61,7 +61,8 @@ describe('recalcWorkflow', () => {
       total: 3,
       lastEvent: 'ping',
       lastSeen: '2026-02-28T12:00:00Z',
-      model: 'claude-opus-4-6'
+      model: 'claude-opus-4-6',
+      displayName: ''
     });
   });
 
@@ -82,5 +83,21 @@ describe('recalcWorkflow', () => {
     const agent = { agentId: 'x', error: 1, warning: 5, total: 10, lastEvent: 'e', lastSeen: 't' };
     const result = recalcWorkflow([agent]);
     assert.equal(result[0].status, 'blocked');
+  });
+
+  it('passes displayName from agent row', () => {
+    const agents = [
+      { agentId: 'a1', error: 0, warning: 0, total: 1, lastEvent: 'e', lastSeen: 't', displayName: 'Fix login bug' }
+    ];
+    const result = recalcWorkflow(agents);
+    assert.equal(result[0].displayName, 'Fix login bug');
+  });
+
+  it('defaults displayName to empty string when missing', () => {
+    const agents = [
+      { agentId: 'a1', error: 0, warning: 0, total: 1, lastEvent: 'e', lastSeen: 't' }
+    ];
+    const result = recalcWorkflow(agents);
+    assert.equal(result[0].displayName, '');
   });
 });

@@ -14,7 +14,7 @@ export function agentRowHtml(row, isChild, isLastChild, now = Date.now()) {
   const dot = activityDotHtml(getActivityStatus(row.lastSeen, now));
   return `
     <tr${cls}>
-      <td>${prefix}${dot}<span class="badge" title="${escapeHtml(row.agentId)}">${escapeHtml(displayNameFor(row.agentId, row.model))}</span></td>
+      <td>${prefix}${dot}<span class="badge" title="${escapeHtml(row.agentId)}">${escapeHtml(row.displayName || displayNameFor(row.agentId, row.model))}</span></td>
       <td>${modelBadge}</td>
       <td>${new Date(row.lastSeen).toLocaleTimeString()}</td>
       <td>${Number(row.total) || 0}</td>
