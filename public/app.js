@@ -1,8 +1,8 @@
-import { recalcWorkflow } from './lib/workflow.js';
+import { recalcWorkflow, splitWorkflow } from './lib/workflow.js';
 import { buildCardData } from './lib/cards.js';
 import { escapeHtml, statusPill, getActivityStatus, activityDotHtml, countActiveAgents } from './lib/utils.js';
 import { applyIncrementalEvent } from './lib/state.js';
-import { saveFilters, loadFilters } from './lib/persistence.js';
+import { saveFilters, loadFilters, saveToggle, loadToggle } from './lib/persistence.js';
 import { connectStream, loadSnapshot } from './lib/connection.js';
 import { renderGraphs } from './lib/renders/charts.js';
 import { getFilteredEvents, renderEventMeta, renderEvents } from './lib/renders/events.js';
@@ -35,10 +35,15 @@ const chartEls = {
   toolCallTooltip: document.getElementById('toolCallTooltip')
 };
 
+const workflowToggle = document.getElementById('workflowToggle');
+const workflowCompletedRoot = document.getElementById('workflowCompleted');
+
 const numberFmt = new Intl.NumberFormat('ko-KR');
 let snapshotState = null;
 let renderQueued = false;
 const storageKey = 'agent_monitor_event_filters_v1';
+const WORKFLOW_TOGGLE_KEY = 'agent_monitor_workflow_toggle_v1';
+let showCompleted = loadToggle(WORKFLOW_TOGGLE_KEY);
 
 function queueRender() {
   if (renderQueued) return;
@@ -62,20 +67,27 @@ function renderCards(totals, agents = []) {
     .join('');
 }
 
+function renderWorkflowItem(row, now) {
+  return `<article class="workflow-item">
+    <div>${activityDotHtml(getActivityStatus(row.lastSeen, now))}<strong>${escapeHtml(row.displayName || row.roleId)}</strong></div>
+    <div>${statusPill(row.status)}</div>
+    <div>events: ${Number(row.total) || 0}</div>
+    <div>last: ${escapeHtml(row.lastEvent)}</div>
+  </article>`;
+}
+
 function renderWorkflow(rows = []) {
   const now = Date.now();
-  workflowRoot.innerHTML = rows
-    .map(
-      (row) => `
-      <article class="workflow-item">
-        <div>${activityDotHtml(getActivityStatus(row.lastSeen, now))}<strong>${escapeHtml(row.displayName || row.roleId)}</strong></div>
-        <div>${statusPill(row.status)}</div>
-        <div>events: ${Number(row.total) || 0}</div>
-        <div>last: ${escapeHtml(row.lastEvent)}</div>
-      </article>
-    `
-    )
-    .join('');
+  const { active, completed } = splitWorkflow(rows);
+
+  workflowRoot.innerHTML = active.length > 0
+    ? active.map((row) => renderWorkflowItem(row, now)).join('')
+    : '<p class="workflow-empty">활성 세션 없음</p>';
+
+  workflowToggle.textContent = `완료된 세션 (${completed.length})`;
+  workflowToggle.classList.toggle('active', showCompleted);
+  workflowCompletedRoot.classList.toggle('open', showCompleted);
+  workflowCompletedRoot.innerHTML = completed.map((row) => renderWorkflowItem(row, now)).join('');
 }
 
 function getFilters() {
@@ -117,6 +129,12 @@ function refilterEvents() {
   renderEvents(filtered, eventsRoot);
   renderEventMeta(allEvents.length, filtered.length, eventMetaEl);
 }
+
+workflowToggle.addEventListener('click', () => {
+  showCompleted = !showCompleted;
+  saveToggle(WORKFLOW_TOGGLE_KEY, showCompleted);
+  queueRender();
+});
 
 agentFilter.addEventListener('change', () => {
   if (snapshotState) {

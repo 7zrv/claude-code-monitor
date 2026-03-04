@@ -11,3 +11,11 @@ export function loadFilters(storageKey, storage = localStorage) {
     return null;
   }
 }
+
+export function saveToggle(storageKey, value, storage = localStorage) {
+  storage.setItem(storageKey, String(value));
+}
+
+export function loadToggle(storageKey, storage = localStorage) {
+  return storage.getItem(storageKey) === 'true';
+}

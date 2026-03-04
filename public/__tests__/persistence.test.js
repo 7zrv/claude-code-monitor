@@ -1,6 +1,6 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { saveFilters, loadFilters } from '../lib/persistence.js';
+import { saveFilters, loadFilters, saveToggle, loadToggle } from '../lib/persistence.js';
 
 // minimal localStorage mock
 function createStorageMock() {
@@ -42,5 +42,44 @@ describe('loadFilters', () => {
     const storage = createStorageMock();
     storage.setItem(KEY, '{broken');
     assert.equal(loadFilters(KEY, storage), null);
+  });
+});
+
+describe('saveToggle', () => {
+  it('stores boolean true as "true"', () => {
+    const storage = createStorageMock();
+    saveToggle('toggle_key', true, storage);
+    assert.equal(storage.getItem('toggle_key'), 'true');
+  });
+
+  it('stores boolean false as "false"', () => {
+    const storage = createStorageMock();
+    saveToggle('toggle_key', false, storage);
+    assert.equal(storage.getItem('toggle_key'), 'false');
+  });
+});
+
+describe('loadToggle', () => {
+  it('returns false when key is missing', () => {
+    const storage = createStorageMock();
+    assert.equal(loadToggle('toggle_key', storage), false);
+  });
+
+  it('returns true when stored value is "true"', () => {
+    const storage = createStorageMock();
+    storage.setItem('toggle_key', 'true');
+    assert.equal(loadToggle('toggle_key', storage), true);
+  });
+
+  it('returns false when stored value is "false"', () => {
+    const storage = createStorageMock();
+    storage.setItem('toggle_key', 'false');
+    assert.equal(loadToggle('toggle_key', storage), false);
+  });
+
+  it('returns false for unexpected value', () => {
+    const storage = createStorageMock();
+    storage.setItem('toggle_key', 'maybe');
+    assert.equal(loadToggle('toggle_key', storage), false);
   });
 });

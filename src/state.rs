@@ -95,9 +95,17 @@ pub fn build_snapshot(state: &State) -> Snapshot {
         recent: state.recent.iter().take(300).cloned().collect(),
         alerts: state.alerts.iter().take(20).cloned().collect(),
         workflow_progress: {
-            let mut keys: Vec<&String> = state.by_agent.keys().collect();
-            keys.sort();
-            keys.iter().map(|k| workflow_row(state, k)).collect()
+            let mut rows: Vec<WorkflowRow> = state
+                .by_agent
+                .keys()
+                .map(|k| workflow_row(state, k))
+                .collect();
+            rows.sort_by(|a, b| {
+                let a_seen = a.last_seen.as_deref().unwrap_or("");
+                let b_seen = b.last_seen.as_deref().unwrap_or("");
+                b_seen.cmp(a_seen)
+            });
+            rows
         },
         tool_call_stats,
     }
@@ -951,5 +959,44 @@ mod tests {
         let now = OffsetDateTime::now_utc();
         assert!(elapsed_secs_from("not-a-date", now).is_none());
         assert!(elapsed_secs_from("", now).is_none());
+    }
+
+    #[test]
+    fn test_build_snapshot_workflow_sorted_by_last_seen_desc() {
+        let mut state = State::default();
+        let agents = [
+            ("agent-a", "2026-01-01T00:00:01Z"),
+            ("agent-b", "2026-01-01T00:00:10Z"),
+            ("agent-c", "2026-01-01T00:00:05Z"),
+        ];
+        for (id, last_seen) in agents {
+            state.by_agent.insert(
+                id.to_string(),
+                AgentRow {
+                    agent_id: id.to_string(),
+                    last_seen: last_seen.to_string(),
+                    total: 1,
+                    ok: 1,
+                    warning: 0,
+                    error: 0,
+                    token_total: 0,
+                    cost_usd: 0.0,
+                    last_event: "ping".to_string(),
+                    latency_ms: None,
+                    model: String::new(),
+                    is_sidechain: false,
+                    session_id: String::new(),
+                    tool_use_counts: std::collections::HashMap::new(),
+                    display_name: String::new(),
+                },
+            );
+        }
+        let snap = build_snapshot(&state);
+        let ids: Vec<&str> = snap
+            .workflow_progress
+            .iter()
+            .map(|r| r.role_id.as_str())
+            .collect();
+        assert_eq!(ids, vec!["agent-b", "agent-c", "agent-a"]);
     }
 }

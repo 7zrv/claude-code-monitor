@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { recalcWorkflow } from '../lib/workflow.js';
+import { recalcWorkflow, splitWorkflow } from '../lib/workflow.js';
 
 describe('recalcWorkflow', () => {
   it('returns empty array when agents is empty', () => {
@@ -165,5 +165,60 @@ describe('recalcWorkflow', () => {
     ];
     const result = recalcWorkflow(agents);
     assert.equal(result[0].status, 'idle');
+  });
+});
+
+describe('splitWorkflow', () => {
+  it('separates active and completed sessions', () => {
+    const rows = [
+      { roleId: 'a', status: 'running', lastSeen: '2026-01-01T00:00:10Z' },
+      { roleId: 'b', status: 'completed', lastSeen: '2026-01-01T00:00:05Z' },
+      { roleId: 'c', status: 'blocked', lastSeen: '2026-01-01T00:00:08Z' },
+      { roleId: 'd', status: 'idle', lastSeen: '2026-01-01T00:00:03Z' },
+      { roleId: 'e', status: 'at-risk', lastSeen: '2026-01-01T00:00:07Z' },
+    ];
+    const { active, completed } = splitWorkflow(rows);
+    assert.deepStrictEqual(active.map(r => r.roleId), ['a', 'c', 'e']);
+    assert.deepStrictEqual(completed.map(r => r.roleId), ['b', 'd']);
+  });
+
+  it('sorts each group by lastSeen descending', () => {
+    const rows = [
+      { roleId: 'a', status: 'running', lastSeen: '2026-01-01T00:00:01Z' },
+      { roleId: 'b', status: 'running', lastSeen: '2026-01-01T00:00:10Z' },
+      { roleId: 'c', status: 'completed', lastSeen: '2026-01-01T00:00:05Z' },
+      { roleId: 'd', status: 'completed', lastSeen: '2026-01-01T00:00:09Z' },
+    ];
+    const { active, completed } = splitWorkflow(rows);
+    assert.deepStrictEqual(active.map(r => r.roleId), ['b', 'a']);
+    assert.deepStrictEqual(completed.map(r => r.roleId), ['d', 'c']);
+  });
+
+  it('limits completed to 20', () => {
+    const rows = Array.from({ length: 25 }, (_, i) => ({
+      roleId: `c${i}`,
+      status: 'completed',
+      lastSeen: `2026-01-01T00:00:${String(i).padStart(2, '0')}Z`,
+    }));
+    const { completed } = splitWorkflow(rows);
+    assert.equal(completed.length, 20);
+    // newest first
+    assert.equal(completed[0].roleId, 'c24');
+  });
+
+  it('returns empty arrays when no rows', () => {
+    const { active, completed } = splitWorkflow([]);
+    assert.deepStrictEqual(active, []);
+    assert.deepStrictEqual(completed, []);
+  });
+
+  it('handles rows with null lastSeen', () => {
+    const rows = [
+      { roleId: 'a', status: 'running', lastSeen: '2026-01-01T00:00:10Z' },
+      { roleId: 'b', status: 'idle', lastSeen: null },
+    ];
+    const { active, completed } = splitWorkflow(rows);
+    assert.equal(active.length, 1);
+    assert.equal(completed.length, 1);
   });
 });
