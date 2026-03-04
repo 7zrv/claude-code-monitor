@@ -80,7 +80,7 @@ export function renderEvents(events, el) {
       <div class="event" data-event-id="${escapeHtml(evt.id)}">
         <div class="event-summary">
           <span>${new Date(evt.receivedAt).toLocaleTimeString()}</span>
-          <span title="${escapeHtml(evt.agentId)}"><strong>${escapeHtml(displayNameFor(evt.agentId))}</strong></span>
+          <span title="${escapeHtml(evt.agentId)}"><strong>${escapeHtml(displayNameFor(evt.agentId, evt.model))}</strong></span>
           <span>${escapeHtml(evt.event)}</span>
           <span>${escapeHtml(evt.message || '')}</span>
           ${statusPill(evt.status)}
