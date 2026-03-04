@@ -1,8 +1,11 @@
-/** @type {Map<string, string>} agentId → display name */
-let nameCache = new Map();
+/** @type {Map<string, {role: string, model: string, seq: number, comboKey: string}>} */
+let agentRegistry = new Map();
 
-/** @type {Map<string, number>} role → next sequence number */
-let roleCounters = new Map();
+/** @type {Map<string, number>} comboKey → next sequence number */
+let comboCounters = new Map();
+
+/** @type {Map<string, Set<string>>} comboKey → Set of agentIds */
+let comboMembers = new Map();
 
 /**
  * Extract a normalised role label from an agent ID.
@@ -28,25 +31,69 @@ function extractRole(agentId) {
 }
 
 /**
+ * Convert a full model identifier to a short display name.
+ *
+ * - "claude-opus-4-6"   → "Opus"
+ * - "claude-sonnet-4-6" → "Sonnet"
+ * - "claude-haiku-4-5"  → "Haiku"
+ * - ""                  → ""
+ * - undefined           → ""
+ * - "gpt-4"             → "gpt-4"
+ *
+ * @param {string|undefined} model
+ * @returns {string}
+ */
+export function shortModelName(model) {
+  if (!model) return '';
+  const lower = model.toLowerCase();
+  if (lower.includes('opus')) return 'Opus';
+  if (lower.includes('sonnet')) return 'Sonnet';
+  if (lower.includes('haiku')) return 'Haiku';
+  return model;
+}
+
+/**
  * Convert an agent ID to a human-friendly display name.
+ *
+ * Format: "Role (Model)" when model is known, with "#N" suffix only
+ * when multiple agents share the same role+model combination.
+ *
+ * Falls back to "Role #N" when no model information is available.
+ *
  * The mapping is stable within a page session — the same agentId always
- * returns the same display name. Sequence numbers are assigned per-role
- * in first-seen order.
+ * returns the same display name (though the suffix may appear when a
+ * duplicate combo is registered).
  *
  * @param {string} agentId
- * @returns {string} e.g. "Lead #1", "Sub #2"
+ * @param {string} [model] - Full model identifier (e.g. "claude-opus-4-6")
+ * @returns {string}
  */
-export function displayNameFor(agentId) {
-  const cached = nameCache.get(agentId);
-  if (cached) return cached;
+export function displayNameFor(agentId, model) {
+  let info = agentRegistry.get(agentId);
 
-  const role = extractRole(agentId);
-  const seq = (roleCounters.get(role) || 0) + 1;
-  roleCounters.set(role, seq);
+  if (!info) {
+    const role = extractRole(agentId);
+    const shortModel = shortModelName(model);
+    const comboKey = `${role}|${shortModel}`;
+    const seq = (comboCounters.get(comboKey) || 0) + 1;
+    comboCounters.set(comboKey, seq);
 
-  const name = `${role} #${seq}`;
-  nameCache.set(agentId, name);
-  return name;
+    if (!comboMembers.has(comboKey)) comboMembers.set(comboKey, new Set());
+    comboMembers.get(comboKey).add(agentId);
+
+    info = { role, model: shortModel, seq, comboKey };
+    agentRegistry.set(agentId, info);
+  }
+
+  const count = comboMembers.get(info.comboKey)?.size || 1;
+
+  if (!info.model) {
+    return `${info.role} #${info.seq}`;
+  }
+
+  return count > 1
+    ? `${info.role} (${info.model}) #${info.seq}`
+    : `${info.role} (${info.model})`;
 }
 
 /**
@@ -54,6 +101,7 @@ export function displayNameFor(agentId) {
  * Mainly used for testing.
  */
 export function resetDisplayNames() {
-  nameCache = new Map();
-  roleCounters = new Map();
+  agentRegistry = new Map();
+  comboCounters = new Map();
+  comboMembers = new Map();
 }

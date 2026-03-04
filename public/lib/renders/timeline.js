@@ -80,7 +80,7 @@ export function renderTimeline(events, el, tooltip, agentFilter) {
           const cx = timelineLeft + i * step;
           const color = getEventColor(evt.event, evt.status);
           const ts = new Date(evt.receivedAt).toLocaleTimeString();
-          const tip = `${escapeHtml(displayNameFor(evt.agentId || 'unknown'))} | ${escapeHtml(evt.event)} | ${escapeHtml(evt.message || '')} | ${escapeHtml(ts)}`;
+          const tip = `${escapeHtml(displayNameFor(evt.agentId || 'unknown', evt.model))} | ${escapeHtml(evt.event)} | ${escapeHtml(evt.message || '')} | ${escapeHtml(ts)}`;
           return `<circle class="timeline-dot" cx="${cx.toFixed(1)}" cy="${y}" r="${dotRadius}" fill="${color}" data-tip="${tip}" />`;
         })
         .join('');

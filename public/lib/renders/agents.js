@@ -14,7 +14,7 @@ export function agentRowHtml(row, isChild, isLastChild, now = Date.now()) {
   const dot = activityDotHtml(getActivityStatus(row.lastSeen, now));
   return `
     <tr${cls}>
-      <td>${prefix}${dot}<span class="badge" title="${escapeHtml(row.agentId)}">${escapeHtml(displayNameFor(row.agentId))}</span></td>
+      <td>${prefix}${dot}<span class="badge" title="${escapeHtml(row.agentId)}">${escapeHtml(displayNameFor(row.agentId, row.model))}</span></td>
       <td>${modelBadge}</td>
       <td>${new Date(row.lastSeen).toLocaleTimeString()}</td>
       <td>${Number(row.total) || 0}</td>
@@ -52,7 +52,7 @@ export function populateAgentFilter(agents, filterEl) {
   for (const agent of agents) {
     const opt = document.createElement('option');
     opt.value = agent.agentId;
-    opt.textContent = agent.isSidechain ? `\u21b3 ${displayNameFor(agent.agentId)}` : displayNameFor(agent.agentId);
+    opt.textContent = agent.isSidechain ? `\u21b3 ${displayNameFor(agent.agentId, agent.model)}` : displayNameFor(agent.agentId, agent.model);
     filterEl.appendChild(opt);
   }
   if (ids.includes(prev) || prev === 'all') {
