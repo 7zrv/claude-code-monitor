@@ -1,21 +1,38 @@
 use serde_json::json;
 use std::sync::atomic::Ordering;
+use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
 
 use crate::types::{
     AgentRow, AlertRow, App, Event, Snapshot, SourceRow, State, ToolCallStat, WorkflowRow,
 };
 use crate::utils::now_iso;
 
+fn elapsed_secs_from(last_seen: &str, now: OffsetDateTime) -> Option<i64> {
+    let parsed = OffsetDateTime::parse(last_seen, &Rfc3339).ok()?;
+    Some((now - parsed).whole_seconds())
+}
+
 pub fn workflow_row(state: &State, role_id: &str) -> WorkflowRow {
+    workflow_row_at(state, role_id, OffsetDateTime::now_utc())
+}
+
+fn workflow_row_at(state: &State, role_id: &str, now: OffsetDateTime) -> WorkflowRow {
     if let Some(row) = state.by_agent.get(role_id) {
+        let elapsed = elapsed_secs_from(&row.last_seen, now);
+
         let status = if row.error > 0 {
             "blocked"
         } else if row.warning > 0 {
             "at-risk"
-        } else if row.total > 0 {
-            "running"
         } else {
-            "idle"
+            match elapsed {
+                Some(s) if s < 30 && row.total > 0 => "running",
+                Some(s) if s >= 120 => "completed",
+                Some(_) => "idle",
+                None if row.total > 0 => "running",
+                None => "idle",
+            }
         };
 
         WorkflowRow {
@@ -292,14 +309,19 @@ mod tests {
         assert!(row.last_seen.is_none());
     }
 
+    fn parse_time(s: &str) -> OffsetDateTime {
+        OffsetDateTime::parse(s, &Rfc3339).unwrap()
+    }
+
     #[test]
     fn test_workflow_row_running() {
         let mut state = State::default();
+        let last_seen = "2025-01-01T00:00:00Z";
         state.by_agent.insert(
             "agent-1".to_string(),
             AgentRow {
                 agent_id: "agent-1".to_string(),
-                last_seen: "2025-01-01T00:00:00Z".to_string(),
+                last_seen: last_seen.to_string(),
                 total: 5,
                 ok: 5,
                 warning: 0,
@@ -315,7 +337,9 @@ mod tests {
                 display_name: String::new(),
             },
         );
-        let row = workflow_row(&state, "agent-1");
+        // 10초 후 → running
+        let now = parse_time(last_seen) + time::Duration::seconds(10);
+        let row = workflow_row_at(&state, "agent-1", now);
         assert!(row.active);
         assert_eq!(row.status, "running");
         assert_eq!(row.total, 5);
@@ -344,6 +368,7 @@ mod tests {
                 display_name: String::new(),
             },
         );
+        // at-risk는 시간 무관
         let row = workflow_row(&state, "agent-1");
         assert_eq!(row.status, "at-risk");
     }
@@ -371,18 +396,20 @@ mod tests {
                 display_name: String::new(),
             },
         );
+        // blocked는 시간 무관
         let row = workflow_row(&state, "agent-1");
         assert_eq!(row.status, "blocked");
     }
 
     #[test]
-    fn test_workflow_row_idle_with_zero_total() {
+    fn test_workflow_row_completed_when_zero_total() {
         let mut state = State::default();
+        let last_seen = "2025-01-01T00:00:00Z";
         state.by_agent.insert(
             "agent-1".to_string(),
             AgentRow {
                 agent_id: "agent-1".to_string(),
-                last_seen: "2025-01-01T00:00:00Z".to_string(),
+                last_seen: last_seen.to_string(),
                 total: 0,
                 ok: 0,
                 warning: 0,
@@ -398,9 +425,161 @@ mod tests {
                 display_name: String::new(),
             },
         );
-        let row = workflow_row(&state, "agent-1");
+        // 3분 경과, total=0 → completed
+        let now = parse_time(last_seen) + time::Duration::seconds(180);
+        let row = workflow_row_at(&state, "agent-1", now);
         assert!(row.active);
+        assert_eq!(row.status, "completed");
+    }
+
+    #[test]
+    fn test_workflow_row_completed_when_last_seen_over_2min() {
+        let mut state = State::default();
+        let last_seen = "2025-01-01T00:00:00Z";
+        state.by_agent.insert(
+            "agent-1".to_string(),
+            AgentRow {
+                agent_id: "agent-1".to_string(),
+                last_seen: last_seen.to_string(),
+                total: 5,
+                ok: 5,
+                warning: 0,
+                error: 0,
+                token_total: 0,
+                cost_usd: 0.0,
+                last_event: "done".to_string(),
+                latency_ms: None,
+                model: String::new(),
+                is_sidechain: false,
+                session_id: String::new(),
+                tool_use_counts: std::collections::HashMap::new(),
+                display_name: String::new(),
+            },
+        );
+        // 3분 경과 → completed
+        let now = parse_time(last_seen) + time::Duration::seconds(180);
+        let row = workflow_row_at(&state, "agent-1", now);
+        assert_eq!(row.status, "completed");
+    }
+
+    #[test]
+    fn test_workflow_row_idle_when_last_seen_30s_to_2min() {
+        let mut state = State::default();
+        let last_seen = "2025-01-01T00:00:00Z";
+        state.by_agent.insert(
+            "agent-1".to_string(),
+            AgentRow {
+                agent_id: "agent-1".to_string(),
+                last_seen: last_seen.to_string(),
+                total: 5,
+                ok: 5,
+                warning: 0,
+                error: 0,
+                token_total: 0,
+                cost_usd: 0.0,
+                last_event: "msg".to_string(),
+                latency_ms: None,
+                model: String::new(),
+                is_sidechain: false,
+                session_id: String::new(),
+                tool_use_counts: std::collections::HashMap::new(),
+                display_name: String::new(),
+            },
+        );
+        // 60초 경과 → idle
+        let now = parse_time(last_seen) + time::Duration::seconds(60);
+        let row = workflow_row_at(&state, "agent-1", now);
         assert_eq!(row.status, "idle");
+    }
+
+    #[test]
+    fn test_workflow_row_running_when_last_seen_recent() {
+        let mut state = State::default();
+        let last_seen = "2025-01-01T00:00:00Z";
+        state.by_agent.insert(
+            "agent-1".to_string(),
+            AgentRow {
+                agent_id: "agent-1".to_string(),
+                last_seen: last_seen.to_string(),
+                total: 3,
+                ok: 3,
+                warning: 0,
+                error: 0,
+                token_total: 0,
+                cost_usd: 0.0,
+                last_event: "ping".to_string(),
+                latency_ms: None,
+                model: String::new(),
+                is_sidechain: false,
+                session_id: String::new(),
+                tool_use_counts: std::collections::HashMap::new(),
+                display_name: String::new(),
+            },
+        );
+        // 5초 경과 → running
+        let now = parse_time(last_seen) + time::Duration::seconds(5);
+        let row = workflow_row_at(&state, "agent-1", now);
+        assert_eq!(row.status, "running");
+    }
+
+    #[test]
+    fn test_workflow_row_blocked_overrides_time() {
+        let mut state = State::default();
+        let last_seen = "2025-01-01T00:00:00Z";
+        state.by_agent.insert(
+            "agent-1".to_string(),
+            AgentRow {
+                agent_id: "agent-1".to_string(),
+                last_seen: last_seen.to_string(),
+                total: 5,
+                ok: 3,
+                warning: 1,
+                error: 1,
+                token_total: 0,
+                cost_usd: 0.0,
+                last_event: "err".to_string(),
+                latency_ms: None,
+                model: String::new(),
+                is_sidechain: false,
+                session_id: String::new(),
+                tool_use_counts: std::collections::HashMap::new(),
+                display_name: String::new(),
+            },
+        );
+        // 10분 경과해도 error면 blocked
+        let now = parse_time(last_seen) + time::Duration::seconds(600);
+        let row = workflow_row_at(&state, "agent-1", now);
+        assert_eq!(row.status, "blocked");
+    }
+
+    #[test]
+    fn test_workflow_row_at_risk_overrides_time() {
+        let mut state = State::default();
+        let last_seen = "2025-01-01T00:00:00Z";
+        state.by_agent.insert(
+            "agent-1".to_string(),
+            AgentRow {
+                agent_id: "agent-1".to_string(),
+                last_seen: last_seen.to_string(),
+                total: 5,
+                ok: 3,
+                warning: 2,
+                error: 0,
+                token_total: 0,
+                cost_usd: 0.0,
+                last_event: "warn".to_string(),
+                latency_ms: None,
+                model: String::new(),
+                is_sidechain: false,
+                session_id: String::new(),
+                tool_use_counts: std::collections::HashMap::new(),
+                display_name: String::new(),
+            },
+        );
+        // 10분 경과해도 warning이면 at-risk
+        let now = parse_time(last_seen) + time::Duration::seconds(600);
+        let row = workflow_row_at(&state, "agent-1", now);
+        assert_eq!(row.status, "at-risk");
     }
 
     #[test]
@@ -755,5 +934,22 @@ mod tests {
         );
         let row = workflow_row(&state, "agent-1");
         assert_eq!(row.display_name, "Fix login bug");
+    }
+
+    #[test]
+    fn test_elapsed_secs_from_valid_iso() {
+        let iso = now_iso();
+        let now = OffsetDateTime::now_utc();
+        let result = elapsed_secs_from(&iso, now);
+        assert!(result.is_some());
+        let secs = result.unwrap();
+        assert!(secs >= 0 && secs < 2);
+    }
+
+    #[test]
+    fn test_elapsed_secs_from_invalid_returns_none() {
+        let now = OffsetDateTime::now_utc();
+        assert!(elapsed_secs_from("not-a-date", now).is_none());
+        assert!(elapsed_secs_from("", now).is_none());
     }
 }
