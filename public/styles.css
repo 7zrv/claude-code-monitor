@@ -155,6 +155,30 @@ main {
   font-weight: 600;
 }
 
+.progress-bar {
+  margin-top: 8px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border-subtle);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.progress-fill--ok { background: var(--color-ok); }
+.progress-fill--warning { background: var(--color-warning); }
+.progress-fill--error { background: var(--color-error); }
+
+.card-sub {
+  margin-top: 4px;
+  font-size: 11px;
+  opacity: 0.65;
+}
+
 .panel {
   margin-bottom: 14px;
   padding: 12px;
