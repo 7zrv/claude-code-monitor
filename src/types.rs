@@ -99,6 +99,14 @@ pub struct SessionRow {
     pub agent_ids: Vec<String>,
 }
 
+#[derive(Clone, Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HourBucket {
+    pub hour_key: String,
+    pub token_total: u64,
+    pub cost_usd: f64,
+}
+
 #[derive(Default)]
 pub struct State {
     pub recent: Vec<Event>,
@@ -110,6 +118,8 @@ pub struct State {
     pub token_total: u64,
     pub cost_total_usd: f64,
     pub tool_use_counts: HashMap<String, u64>,
+    pub started_at: String,
+    pub hourly_buckets: Vec<HourBucket>,
 }
 
 #[derive(Clone, Serialize)]
@@ -131,6 +141,8 @@ pub struct Snapshot {
     pub workflow_progress: Vec<WorkflowRow>,
     pub tool_call_stats: Vec<ToolCallStat>,
     pub sessions: Vec<SessionRow>,
+    pub started_at: String,
+    pub hourly_buckets: Vec<HourBucket>,
 }
 
 pub struct ParsedRequest {
