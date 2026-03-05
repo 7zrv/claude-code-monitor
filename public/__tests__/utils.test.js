@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { escapeHtml, statusPill, normalizeText, getActivityStatus, activityDotHtml, countActiveAgents } from '../lib/utils.js';
+import { escapeHtml, statusPill, normalizeText, getActivityStatus, activityDotHtml, countActiveAgents, relativeTime } from '../lib/utils.js';
 
 describe('escapeHtml', () => {
   it('escapes & < > " \'', () => {
@@ -147,5 +147,54 @@ describe('countActiveAgents', () => {
     const now = Date.now();
     const agents = [{ lastSeen: new Date(now - 30_000).toISOString() }];
     assert.equal(countActiveAgents(agents, now), 0);
+  });
+});
+
+describe('relativeTime', () => {
+  it('returns "방금" for less than 5 seconds', () => {
+    const now = Date.now();
+    assert.equal(relativeTime(new Date(now - 3_000).toISOString(), now), '방금');
+  });
+
+  it('returns "N초 전" for less than 60 seconds', () => {
+    const now = Date.now();
+    assert.equal(relativeTime(new Date(now - 30_000).toISOString(), now), '30초 전');
+  });
+
+  it('returns "N분 전" for less than 60 minutes', () => {
+    const now = Date.now();
+    assert.equal(relativeTime(new Date(now - 90_000).toISOString(), now), '1분 전');
+  });
+
+  it('returns "N시간 전" for less than 24 hours', () => {
+    const now = Date.now();
+    assert.equal(relativeTime(new Date(now - 7_200_000).toISOString(), now), '2시간 전');
+  });
+
+  it('returns "N일 전" for 24 hours or more', () => {
+    const now = Date.now();
+    assert.equal(relativeTime(new Date(now - 259_200_000).toISOString(), now), '3일 전');
+  });
+
+  it('returns "-" for null', () => {
+    assert.equal(relativeTime(null), '-');
+  });
+
+  it('returns "-" for undefined', () => {
+    assert.equal(relativeTime(undefined), '-');
+  });
+
+  it('returns "방금" at exactly 0 seconds', () => {
+    const now = Date.now();
+    assert.equal(relativeTime(new Date(now).toISOString(), now), '방금');
+  });
+
+  it('returns "5초 전" at exactly 5 seconds boundary', () => {
+    const now = Date.now();
+    assert.equal(relativeTime(new Date(now - 5_000).toISOString(), now), '5초 전');
+  });
+
+  it('returns "-" for invalid date string', () => {
+    assert.equal(relativeTime('not-a-date'), '-');
   });
 });

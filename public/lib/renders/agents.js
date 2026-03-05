@@ -1,4 +1,4 @@
-import { escapeHtml, getActivityStatus, activityDotHtml } from '../utils.js';
+import { escapeHtml, getActivityStatus, activityDotHtml, relativeTime } from '../utils.js';
 import { displayNameFor } from '../agent-display.js';
 import { buildAgentTree } from '../agent-tree.js';
 
@@ -8,20 +8,17 @@ export function agentRowHtml(row, isChild, isLastChild, now = Date.now()) {
   const prefix = isChild ? '<span class="tree-branch"></span>' : '';
   const classes = [isChild && 'tree-child', isLastChild && 'tree-last'].filter(Boolean).join(' ');
   const cls = classes ? ` class="${classes}"` : '';
-  const modelBadge = row.model
-    ? `<span class="model-badge">${escapeHtml(row.model)}</span>`
-    : '-';
+  const titleAttr = row.model
+    ? `${escapeHtml(row.agentId)} | ${escapeHtml(row.model)}`
+    : escapeHtml(row.agentId);
   const dot = activityDotHtml(getActivityStatus(row.lastSeen, now));
   return `
     <tr${cls}>
-      <td>${prefix}${dot}<span class="badge" title="${escapeHtml(row.agentId)}">${escapeHtml(row.displayName || displayNameFor(row.agentId, row.model))}</span></td>
-      <td>${modelBadge}</td>
-      <td>${new Date(row.lastSeen).toLocaleTimeString()}</td>
-      <td>${Number(row.total) || 0}</td>
-      <td>${Number(row.ok) || 0}</td>
-      <td>${Number(row.warning) || 0}</td>
+      <td>${prefix}${dot}<span class="badge" title="${titleAttr}">${escapeHtml(row.displayName || displayNameFor(row.agentId, row.model))}</span></td>
+      <td title="${row.lastSeen ? new Date(row.lastSeen).toLocaleTimeString() : ''}">${relativeTime(row.lastSeen, now)}</td>
       <td>${Number(row.error) || 0}</td>
       <td>${numberFmt.format(row.tokenTotal || 0)}</td>
+      <td>$${(row.costUsd || 0).toFixed(4)}</td>
       <td>${escapeHtml(row.lastEvent)}</td>
       <td>${row.latencyMs == null ? '-' : `${row.latencyMs} ms`}</td>
     </tr>`;

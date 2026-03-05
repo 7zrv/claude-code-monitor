@@ -33,6 +33,18 @@ export function activityDotHtml(status) {
   return `<span class="activity-dot activity-dot--${safe}" aria-label="${safe}"></span>`;
 }
 
+export function relativeTime(isoString, now = Date.now()) {
+  if (!isoString) return '-';
+  const ms = new Date(isoString).getTime();
+  if (isNaN(ms)) return '-';
+  const elapsed = Math.floor((now - ms) / 1000);
+  if (elapsed < 5) return '방금';
+  if (elapsed < 60) return `${elapsed}초 전`;
+  if (elapsed < 3600) return `${Math.floor(elapsed / 60)}분 전`;
+  if (elapsed < 86400) return `${Math.floor(elapsed / 3600)}시간 전`;
+  return `${Math.floor(elapsed / 86400)}일 전`;
+}
+
 export function countActiveAgents(agents, now = Date.now()) {
   return agents.filter((a) => now - new Date(a.lastSeen).getTime() < 30_000).length;
 }
