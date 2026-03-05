@@ -85,12 +85,23 @@ pub struct WorkflowRow {
     pub display_name: String,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionRow {
+    pub session_id: String,
+    pub last_seen: String,
+    pub token_total: u64,
+    pub cost_usd: f64,
+    pub agent_ids: Vec<String>,
+}
+
 #[derive(Default)]
 pub struct State {
     pub recent: Vec<Event>,
     pub alerts: Vec<AlertRow>,
     pub by_agent: HashMap<String, AgentRow>,
     pub by_source: HashMap<String, SourceRow>,
+    pub by_session: HashMap<String, SessionRow>,
     pub token_total: u64,
     pub cost_total_usd: f64,
     pub tool_use_counts: HashMap<String, u64>,
@@ -114,6 +125,7 @@ pub struct Snapshot {
     pub alerts: Vec<AlertRow>,
     pub workflow_progress: Vec<WorkflowRow>,
     pub tool_call_stats: Vec<ToolCallStat>,
+    pub sessions: Vec<SessionRow>,
 }
 
 pub struct ParsedRequest {

@@ -4,7 +4,8 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 use crate::types::{
-    AgentRow, AlertRow, App, Event, Snapshot, SourceRow, State, ToolCallStat, WorkflowRow,
+    AgentRow, AlertRow, App, Event, SessionRow, Snapshot, SourceRow, State, ToolCallStat,
+    WorkflowRow,
 };
 use crate::utils::now_iso;
 
@@ -65,7 +66,7 @@ pub fn build_snapshot(state: &State) -> Snapshot {
     sources.sort_by(|a, b| a.source.cmp(&b.source));
 
     let totals = agents.iter().fold(
-        json!({ "agents": agents.len(), "total": 0, "ok": 0, "warning": 0, "error": 0, "tokenTotal": 0, "costTotalUsd": state.cost_total_usd }),
+        json!({ "agents": agents.len(), "total": 0, "ok": 0, "warning": 0, "error": 0, "tokenTotal": 0, "costTotalUsd": state.cost_total_usd, "sessions": state.by_session.len() }),
         |mut acc, row| {
             acc["total"] = json!(acc["total"].as_u64().unwrap_or(0) + row.total);
             acc["ok"] = json!(acc["ok"].as_u64().unwrap_or(0) + row.ok);
@@ -108,6 +109,12 @@ pub fn build_snapshot(state: &State) -> Snapshot {
             rows
         },
         tool_call_stats,
+        sessions: {
+            let mut sessions: Vec<SessionRow> = state.by_session.values().cloned().collect();
+            sessions.sort_by(|a, b| b.last_seen.cmp(&a.last_seen));
+            sessions.truncate(50);
+            sessions
+        },
     }
 }
 
@@ -209,6 +216,41 @@ pub fn append_event(app: &App, evt: Event) {
                 .tool_use_counts
                 .entry(evt.message.clone())
                 .or_insert(0) += 1;
+        }
+
+        if !evt.session_id.is_empty() {
+            let session = state
+                .by_session
+                .entry(evt.session_id.clone())
+                .or_insert(SessionRow {
+                    session_id: evt.session_id.clone(),
+                    last_seen: evt.received_at.clone(),
+                    token_total: 0,
+                    cost_usd: 0.0,
+                    agent_ids: vec![],
+                });
+            session.last_seen = evt.received_at.clone();
+            if token_total > 0 {
+                session.token_total += token_total;
+            }
+            if cost_delta > 0.0 {
+                session.cost_usd += cost_delta;
+            }
+            if !session.agent_ids.contains(&evt.agent_id) {
+                session.agent_ids.push(evt.agent_id.clone());
+            }
+
+            if state.by_session.len() > 200 {
+                if let Some(oldest_key) = state
+                    .by_session
+                    .iter()
+                    .filter(|(k, _)| k.as_str() != evt.session_id.as_str())
+                    .min_by(|a, b| a.1.last_seen.cmp(&b.1.last_seen))
+                    .map(|(k, _)| k.clone())
+                {
+                    state.by_session.remove(&oldest_key);
+                }
+            }
         }
 
         let source = evt
@@ -959,6 +1001,194 @@ mod tests {
         let now = OffsetDateTime::now_utc();
         assert!(elapsed_secs_from("not-a-date", now).is_none());
         assert!(elapsed_secs_from("", now).is_none());
+    }
+
+    // ── Session aggregation tests ──
+
+    fn make_test_event_with_session(
+        status: &str,
+        event: &str,
+        agent_id: &str,
+        session_id: &str,
+        metadata: serde_json::Value,
+    ) -> Event {
+        Event {
+            id: "e0".to_string(),
+            agent_id: agent_id.to_string(),
+            event: event.to_string(),
+            status: status.to_string(),
+            latency_ms: None,
+            message: "test".to_string(),
+            metadata,
+            timestamp: "2025-01-01T00:00:00Z".to_string(),
+            received_at: "2025-01-01T00:00:00Z".to_string(),
+            model: String::new(),
+            is_sidechain: false,
+            session_id: session_id.to_string(),
+        }
+    }
+
+    #[test]
+    fn test_append_event_skips_session_when_session_id_empty() {
+        let app = make_test_app();
+        append_event(
+            &app,
+            make_test_event_with_session("ok", "msg", "a1", "", json!({})),
+        );
+        let state = app.state.lock().unwrap();
+        assert!(state.by_session.is_empty());
+    }
+
+    #[test]
+    fn test_append_event_creates_session_row() {
+        let app = make_test_app();
+        append_event(
+            &app,
+            make_test_event_with_session("ok", "msg", "a1", "sess-1", json!({})),
+        );
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.by_session.len(), 1);
+        let sess = &state.by_session["sess-1"];
+        assert_eq!(sess.session_id, "sess-1");
+        assert!(sess.agent_ids.contains(&"a1".to_string()));
+    }
+
+    #[test]
+    fn test_append_event_session_accumulates_tokens_and_cost() {
+        let app = make_test_app();
+        let meta_tok = json!({ "tokenUsage": { "totalTokens": 200 } });
+        append_event(
+            &app,
+            make_test_event_with_session("ok", "msg", "a1", "sess-1", meta_tok),
+        );
+        let meta_cost = json!({ "costDelta": 0.03 });
+        append_event(
+            &app,
+            make_test_event_with_session("ok", "cost_update", "a1", "sess-1", meta_cost),
+        );
+        let state = app.state.lock().unwrap();
+        let sess = &state.by_session["sess-1"];
+        assert_eq!(sess.token_total, 200);
+        assert!((sess.cost_usd - 0.03).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_append_event_session_tracks_multiple_agent_ids() {
+        let app = make_test_app();
+        append_event(
+            &app,
+            make_test_event_with_session("ok", "msg", "a1", "sess-1", json!({})),
+        );
+        append_event(
+            &app,
+            make_test_event_with_session("ok", "msg", "a2", "sess-1", json!({})),
+        );
+        // duplicate agent should not add again
+        append_event(
+            &app,
+            make_test_event_with_session("ok", "msg", "a1", "sess-1", json!({})),
+        );
+        let state = app.state.lock().unwrap();
+        let sess = &state.by_session["sess-1"];
+        assert_eq!(sess.agent_ids.len(), 2);
+        assert!(sess.agent_ids.contains(&"a1".to_string()));
+        assert!(sess.agent_ids.contains(&"a2".to_string()));
+    }
+
+    #[test]
+    fn test_append_event_session_evicts_oldest_when_over_200() {
+        let app = make_test_app();
+        for i in 0..201 {
+            let mut evt =
+                make_test_event_with_session("ok", "msg", "a1", &format!("sess-{}", i), json!({}));
+            evt.received_at = format!("2025-01-01T00:00:{:02}Z", i.min(59));
+            append_event(&app, evt);
+        }
+        let state = app.state.lock().unwrap();
+        assert!(state.by_session.len() <= 200);
+    }
+
+    #[test]
+    fn test_build_snapshot_includes_sessions() {
+        let mut state = State::default();
+        state.by_session.insert(
+            "sess-1".to_string(),
+            crate::types::SessionRow {
+                session_id: "sess-1".to_string(),
+                last_seen: "2025-01-01T00:00:10Z".to_string(),
+                token_total: 100,
+                cost_usd: 0.05,
+                agent_ids: vec!["a1".to_string()],
+            },
+        );
+        let snap = build_snapshot(&state);
+        assert_eq!(snap.sessions.len(), 1);
+        assert_eq!(snap.sessions[0].session_id, "sess-1");
+    }
+
+    #[test]
+    fn test_build_snapshot_sessions_sorted_by_last_seen_desc() {
+        let mut state = State::default();
+        let sessions = [
+            ("s1", "2025-01-01T00:00:01Z"),
+            ("s2", "2025-01-01T00:00:10Z"),
+            ("s3", "2025-01-01T00:00:05Z"),
+        ];
+        for (id, last_seen) in sessions {
+            state.by_session.insert(
+                id.to_string(),
+                crate::types::SessionRow {
+                    session_id: id.to_string(),
+                    last_seen: last_seen.to_string(),
+                    token_total: 0,
+                    cost_usd: 0.0,
+                    agent_ids: vec![],
+                },
+            );
+        }
+        let snap = build_snapshot(&state);
+        let ids: Vec<&str> = snap
+            .sessions
+            .iter()
+            .map(|s| s.session_id.as_str())
+            .collect();
+        assert_eq!(ids, vec!["s2", "s3", "s1"]);
+    }
+
+    #[test]
+    fn test_build_snapshot_sessions_limited_to_50() {
+        let mut state = State::default();
+        for i in 0..80 {
+            state.by_session.insert(
+                format!("s-{}", i),
+                crate::types::SessionRow {
+                    session_id: format!("s-{}", i),
+                    last_seen: format!("2025-01-01T00:{:02}:00Z", i.min(59)),
+                    token_total: 0,
+                    cost_usd: 0.0,
+                    agent_ids: vec![],
+                },
+            );
+        }
+        let snap = build_snapshot(&state);
+        assert_eq!(snap.sessions.len(), 50);
+    }
+
+    #[test]
+    fn test_build_snapshot_totals_includes_session_count() {
+        let mut state = State::default();
+        state.by_session.insert(
+            "sess-1".to_string(),
+            crate::types::SessionRow {
+                session_id: "sess-1".to_string(),
+                last_seen: "2025-01-01T00:00:00Z".to_string(),
+                token_total: 0,
+                cost_usd: 0.0,
+                agent_ids: vec![],
+            },
+        );
+        let snap = build_snapshot(&state);
+        assert_eq!(snap.totals["sessions"], 1);
     }
 
     #[test]

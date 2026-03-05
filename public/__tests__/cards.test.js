@@ -5,17 +5,17 @@ import { buildCardData } from '../lib/cards.js';
 const numberFmt = new Intl.NumberFormat('ko-KR');
 
 describe('buildCardData', () => {
-  it('returns 4 cards total', () => {
-    const totals = { agents: 1, total: 5, tokenTotal: 100, ok: 3, warning: 1, error: 1, costTotalUsd: 1.5 };
+  it('returns 5 cards total', () => {
+    const totals = { agents: 1, total: 5, tokenTotal: 100, ok: 3, warning: 1, error: 1, costTotalUsd: 1.5, sessions: 2 };
     const cards = buildCardData(totals, numberFmt);
-    assert.equal(cards.length, 4);
+    assert.equal(cards.length, 5);
   });
 
-  it('includes only Active, Error, Total Tokens, Cost (USD) cards', () => {
-    const totals = { agents: 2, total: 10, tokenTotal: 500, ok: 7, warning: 2, error: 1, costTotalUsd: 0.05 };
+  it('includes Active, Error, Sessions, Total Tokens, Cost (USD) cards', () => {
+    const totals = { agents: 2, total: 10, tokenTotal: 500, ok: 7, warning: 2, error: 1, costTotalUsd: 0.05, sessions: 3 };
     const cards = buildCardData(totals, numberFmt, 1);
     const labels = cards.map(([label]) => label);
-    assert.deepEqual(labels, ['Active', 'Error', 'Total Tokens', 'Cost (USD)']);
+    assert.deepEqual(labels, ['Active', 'Error', 'Sessions', 'Total Tokens', 'Cost (USD)']);
   });
 
   it('does not include removed cards', () => {
@@ -25,6 +25,15 @@ describe('buildCardData', () => {
     for (const removed of ['Agents', 'Total Events', 'OK', 'Warning']) {
       assert.ok(!labels.includes(removed), `${removed} card should not exist`);
     }
+  });
+
+  it('includes Sessions card with session count', () => {
+    const totals = { agents: 1, total: 5, tokenTotal: 100, ok: 3, warning: 1, error: 1, costTotalUsd: 0, sessions: 5 };
+    const cards = buildCardData(totals, numberFmt);
+    const sessCard = cards.find(([l]) => l === 'Sessions');
+    assert.ok(sessCard, 'Sessions card should exist');
+    assert.equal(sessCard[1], '5');
+    assert.equal(sessCard[2], 'neutral');
   });
 
   it('includes Cost (USD) card with 4 decimal places', () => {
