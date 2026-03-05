@@ -4,36 +4,14 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 use crate::types::{
-    AgentRow, AlertRow, App, Event, SessionRow, Snapshot, SourceRow, State, TokenSample,
-    ToolCallStat, WorkflowRow,
+    AgentRow, AlertRow, App, Event, SessionRow, Snapshot, SourceRow, State, ToolCallStat,
+    WorkflowRow,
 };
 use crate::utils::now_iso;
 
 fn elapsed_secs_from(last_seen: &str, now: OffsetDateTime) -> Option<i64> {
     let parsed = OffsetDateTime::parse(last_seen, &Rfc3339).ok()?;
     Some((now - parsed).whole_seconds())
-}
-
-pub fn calc_token_burn_rate(samples: &[TokenSample]) -> f64 {
-    if samples.len() < 2 {
-        return 0.0;
-    }
-    let first = &samples[0];
-    let last = &samples[samples.len() - 1];
-    let elapsed_secs = (last.sampled_at_dt - first.sampled_at_dt).whole_seconds();
-    if elapsed_secs <= 0 {
-        return 0.0;
-    }
-    let token_diff = last.tokens as f64 - first.tokens as f64;
-    token_diff / (elapsed_secs as f64 / 60.0)
-}
-
-pub fn calc_time_to_limit(token_total: u64, plan_limit: u64, burn_rate: f64) -> Option<f64> {
-    if plan_limit == 0 || burn_rate <= 0.0 {
-        return None;
-    }
-    let remaining = plan_limit as f64 - token_total as f64;
-    Some(remaining / burn_rate)
 }
 
 pub fn workflow_row(state: &State, role_id: &str) -> WorkflowRow {
@@ -95,29 +73,16 @@ pub fn build_snapshot(state: &State) -> Snapshot {
     let mut sources: Vec<SourceRow> = state.by_source.values().cloned().collect();
     sources.sort_by(|a, b| a.source.cmp(&b.source));
 
-    let burn_rate = calc_token_burn_rate(&state.token_samples);
-    let plan_usage_percent = if state.plan_limit > 0 {
-        json!(state.token_total as f64 / state.plan_limit as f64 * 100.0)
-    } else {
-        json!(null)
-    };
-    let minutes_to_limit = match calc_time_to_limit(state.token_total, state.plan_limit, burn_rate)
-    {
-        Some(m) => json!(m),
-        None => json!(null),
-    };
-
     let totals = agents.iter().fold(
         json!({
             "agents": agents.len(),
-            "total": 0, "ok": 0, "warning": 0, "error": 0,
+            "total": 0,
+            "ok": 0,
+            "warning": 0,
+            "error": 0,
             "tokenTotal": 0,
             "costTotalUsd": state.cost_total_usd,
             "sessions": state.by_session.len(),
-            "tokenBurnRate": burn_rate,
-            "planLimit": state.plan_limit,
-            "planUsagePercent": plan_usage_percent,
-            "minutesToLimit": minutes_to_limit,
         }),
         |mut acc, row| {
             acc["total"] = json!(acc["total"].as_u64().unwrap_or(0) + row.total);
@@ -170,6 +135,31 @@ pub fn build_snapshot(state: &State) -> Snapshot {
     }
 }
 
+pub fn extract_project_name(cwd: &str) -> &str {
+    if cwd.is_empty() {
+        return "";
+    }
+    // Detect .claude/worktrees/<prefix>/<name> pattern
+    if let Some(pos) = cwd.find("/.claude/worktrees/") {
+        let after = &cwd[pos + "/.claude/worktrees/".len()..];
+        // Take the second segment (after prefix like feat/, fix/, etc.)
+        let mut segments = after.split('/');
+        let first = segments.next().unwrap_or("");
+        let second = segments.next().unwrap_or("");
+        if !second.is_empty() {
+            return second;
+        }
+        if !first.is_empty() {
+            return first;
+        }
+    }
+    // Fallback: last path component
+    std::path::Path::new(cwd)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+}
+
 pub fn append_event(app: &App, evt: Event) {
     {
         let mut state = app.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -197,6 +187,7 @@ pub fn append_event(app: &App, evt: Event) {
                 session_id: evt.session_id.clone(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: String::new(),
+                display_name_from_user: false,
             });
 
         row.last_seen = evt.received_at.clone();
@@ -211,8 +202,8 @@ pub fn append_event(app: &App, evt: Event) {
             row.session_id = evt.session_id.clone();
         }
         if (evt.event == "user_message" || evt.event == "user_request")
-            && row.display_name.is_empty()
             && !evt.message.is_empty()
+            && !row.display_name_from_user
         {
             let mut chars = evt.message.chars();
             let truncated: String = chars.by_ref().take(40).collect();
@@ -220,6 +211,16 @@ pub fn append_event(app: &App, evt: Event) {
                 row.display_name = format!("{}...", truncated);
             } else {
                 row.display_name = truncated;
+            }
+            row.display_name_from_user = true;
+        } else if !row.display_name_from_user && !evt.cwd.is_empty() {
+            let project = extract_project_name(&evt.cwd);
+            if !project.is_empty() {
+                row.display_name = if evt.is_sidechain {
+                    format!("{} (Agent)", project)
+                } else {
+                    project.to_string()
+                };
             }
         }
 
@@ -259,17 +260,6 @@ pub fn append_event(app: &App, evt: Event) {
         // row is no longer used — update state-level accumulators
         if token_total > 0 {
             state.token_total += token_total;
-
-            // Record token sample and prune old ones (>10 min)
-            if let Ok(now_time) = OffsetDateTime::parse(&evt.received_at, &Rfc3339) {
-                let cutoff = now_time - time::Duration::minutes(10);
-                state.token_samples.retain(|s| s.sampled_at_dt >= cutoff);
-                let cumulative = state.token_total;
-                state.token_samples.push(TokenSample {
-                    tokens: cumulative,
-                    sampled_at_dt: now_time,
-                });
-            }
         }
         if cost_delta > 0.0 {
             state.cost_total_usd += cost_delta;
@@ -419,6 +409,7 @@ mod tests {
             model: String::new(),
             is_sidechain: false,
             session_id: String::new(),
+            cwd: String::new(),
         }
     }
 
@@ -435,13 +426,6 @@ mod tests {
 
     fn parse_time(s: &str) -> OffsetDateTime {
         OffsetDateTime::parse(s, &Rfc3339).unwrap()
-    }
-
-    fn make_token_sample(tokens: u64, at: &str) -> TokenSample {
-        TokenSample {
-            tokens,
-            sampled_at_dt: parse_time(at),
-        }
     }
 
     #[test]
@@ -466,6 +450,7 @@ mod tests {
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: String::new(),
+                display_name_from_user: false,
             },
         );
         // 10초 후 → running
@@ -497,6 +482,7 @@ mod tests {
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: String::new(),
+                display_name_from_user: false,
             },
         );
         // at-risk는 시간 무관
@@ -525,6 +511,7 @@ mod tests {
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: String::new(),
+                display_name_from_user: false,
             },
         );
         // blocked는 시간 무관
@@ -554,6 +541,7 @@ mod tests {
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: String::new(),
+                display_name_from_user: false,
             },
         );
         // 3분 경과, total=0 → completed
@@ -585,6 +573,7 @@ mod tests {
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: String::new(),
+                display_name_from_user: false,
             },
         );
         // 3분 경과 → completed
@@ -615,6 +604,7 @@ mod tests {
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: String::new(),
+                display_name_from_user: false,
             },
         );
         // 60초 경과 → idle
@@ -645,6 +635,7 @@ mod tests {
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: String::new(),
+                display_name_from_user: false,
             },
         );
         // 5초 경과 → running
@@ -675,6 +666,7 @@ mod tests {
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: String::new(),
+                display_name_from_user: false,
             },
         );
         // 10분 경과해도 error면 blocked
@@ -705,6 +697,7 @@ mod tests {
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: String::new(),
+                display_name_from_user: false,
             },
         );
         // 10분 경과해도 warning이면 at-risk
@@ -746,6 +739,7 @@ mod tests {
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: String::new(),
+                display_name_from_user: false,
             },
         );
         state.by_agent.insert(
@@ -766,6 +760,7 @@ mod tests {
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: String::new(),
+                display_name_from_user: false,
             },
         );
         let snap = build_snapshot(&state);
@@ -1061,6 +1056,7 @@ mod tests {
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: "Fix login bug".to_string(),
+                display_name_from_user: false,
             },
         );
         let row = workflow_row(&state, "agent-1");
@@ -1106,6 +1102,7 @@ mod tests {
             model: String::new(),
             is_sidechain: false,
             session_id: session_id.to_string(),
+            cwd: String::new(),
         }
     }
 
@@ -1272,151 +1269,6 @@ mod tests {
         assert_eq!(snap.totals["sessions"], 1);
     }
 
-    #[test]
-    fn test_build_snapshot_includes_burn_rate_fields() {
-        let mut state = State::default();
-        state.token_total = 5000;
-        state.plan_limit = 100_000;
-        state.token_samples = vec![
-            make_token_sample(3000, "2025-01-01T00:00:00Z"),
-            make_token_sample(5000, "2025-01-01T00:05:00Z"),
-        ];
-        let snap = build_snapshot(&state);
-        // burn rate = (5000 - 3000) / 5 = 400 tok/min
-        assert!((snap.totals["tokenBurnRate"].as_f64().unwrap() - 400.0).abs() < 0.01);
-        assert_eq!(snap.totals["planLimit"], 100_000);
-        // usage percent = 5000 / 100000 * 100 = 5.0
-        assert!((snap.totals["planUsagePercent"].as_f64().unwrap() - 5.0).abs() < 0.01);
-        // minutes to limit = (100000 - 5000) / 400 = 237.5
-        assert!((snap.totals["minutesToLimit"].as_f64().unwrap() - 237.5).abs() < 0.01);
-    }
-
-    #[test]
-    fn test_build_snapshot_no_plan_limit_fields_null() {
-        let mut state = State::default();
-        state.token_total = 5000;
-        state.plan_limit = 0;
-        let snap = build_snapshot(&state);
-        assert_eq!(snap.totals["tokenBurnRate"], 0.0);
-        assert_eq!(snap.totals["planLimit"], 0);
-        assert!(snap.totals["planUsagePercent"].is_null());
-        assert!(snap.totals["minutesToLimit"].is_null());
-    }
-
-    #[test]
-    fn test_append_event_records_token_sample() {
-        let app = make_test_app();
-        let meta = json!({ "tokenUsage": { "totalTokens": 500 } });
-        let mut evt = make_test_event("ok", "msg", "a1", meta);
-        evt.received_at = "2025-01-01T00:00:00Z".to_string();
-        append_event(&app, evt);
-        let state = app.state.lock().unwrap();
-        assert_eq!(state.token_samples.len(), 1);
-        assert_eq!(state.token_samples[0].tokens, 500);
-        assert_eq!(
-            state.token_samples[0].sampled_at_dt,
-            parse_time("2025-01-01T00:00:00Z")
-        );
-    }
-
-    #[test]
-    fn test_append_event_no_sample_when_zero_tokens() {
-        let app = make_test_app();
-        let evt = make_test_event("ok", "msg", "a1", json!({}));
-        append_event(&app, evt);
-        let state = app.state.lock().unwrap();
-        assert!(state.token_samples.is_empty());
-    }
-
-    #[test]
-    fn test_append_event_prunes_old_samples() {
-        let app = make_test_app();
-        // Old sample: 15 minutes ago
-        let meta1 = json!({ "tokenUsage": { "totalTokens": 100 } });
-        let mut evt1 = make_test_event("ok", "msg", "a1", meta1);
-        evt1.received_at = "2025-01-01T00:00:00Z".to_string();
-        append_event(&app, evt1);
-
-        // Recent sample: 5 minutes later (still within 10 min window of next event)
-        let meta2 = json!({ "tokenUsage": { "totalTokens": 200 } });
-        let mut evt2 = make_test_event("ok", "msg", "a1", meta2);
-        evt2.received_at = "2025-01-01T00:05:00Z".to_string();
-        append_event(&app, evt2);
-
-        // New sample: 11 minutes after first → first should be pruned
-        let meta3 = json!({ "tokenUsage": { "totalTokens": 300 } });
-        let mut evt3 = make_test_event("ok", "msg", "a1", meta3);
-        evt3.received_at = "2025-01-01T00:11:00Z".to_string();
-        append_event(&app, evt3);
-
-        let state = app.state.lock().unwrap();
-        // First sample (00:00) should be pruned (>10 min before 00:11)
-        // Cumulative totals: evt1=100, evt2=100+200=300, evt3=100+200+300=600
-        assert_eq!(state.token_samples.len(), 2);
-        assert_eq!(state.token_samples[0].tokens, 300);
-        assert_eq!(state.token_samples[1].tokens, 600);
-    }
-
-    #[test]
-    fn test_calc_token_burn_rate_empty_samples() {
-        let samples: Vec<TokenSample> = vec![];
-        assert_eq!(calc_token_burn_rate(&samples), 0.0);
-    }
-
-    #[test]
-    fn test_calc_token_burn_rate_single_sample() {
-        let samples = vec![make_token_sample(1000, "2025-01-01T00:00:00Z")];
-        assert_eq!(calc_token_burn_rate(&samples), 0.0);
-    }
-
-    #[test]
-    fn test_calc_token_burn_rate_two_samples() {
-        let samples = vec![
-            make_token_sample(1000, "2025-01-01T00:00:00Z"),
-            make_token_sample(2000, "2025-01-01T00:05:00Z"),
-        ];
-        // (2000 - 1000) / 5 minutes = 200.0 tok/min
-        assert!((calc_token_burn_rate(&samples) - 200.0).abs() < 0.01);
-    }
-
-    #[test]
-    fn test_calc_token_burn_rate_zero_elapsed() {
-        let samples = vec![
-            make_token_sample(1000, "2025-01-01T00:00:00Z"),
-            make_token_sample(2000, "2025-01-01T00:00:00Z"),
-        ];
-        assert_eq!(calc_token_burn_rate(&samples), 0.0);
-    }
-
-    #[test]
-    fn test_calc_time_to_limit_normal() {
-        // 100 tok/min burn rate, 8000 remaining → 80 min
-        let result = calc_time_to_limit(2000, 10000, 100.0);
-        assert!((result.unwrap() - 80.0).abs() < 0.01);
-    }
-
-    #[test]
-    fn test_calc_time_to_limit_no_plan() {
-        assert!(calc_time_to_limit(2000, 0, 100.0).is_none());
-    }
-
-    #[test]
-    fn test_calc_time_to_limit_zero_burn_rate() {
-        assert!(calc_time_to_limit(2000, 10000, 0.0).is_none());
-    }
-
-    #[test]
-    fn test_calc_time_to_limit_negative_burn_rate() {
-        assert!(calc_time_to_limit(2000, 10000, -5.0).is_none());
-    }
-
-    #[test]
-    fn test_calc_time_to_limit_already_exceeded() {
-        // token_total > plan_limit
-        let result = calc_time_to_limit(15000, 10000, 100.0);
-        assert!(result.unwrap() < 0.0);
-    }
-
     // ── Session events (drill-down) tests ──
 
     #[test]
@@ -1510,6 +1362,7 @@ mod tests {
                     session_id: String::new(),
                     tool_use_counts: std::collections::HashMap::new(),
                     display_name: String::new(),
+                    display_name_from_user: false,
                 },
             );
         }
@@ -1520,5 +1373,221 @@ mod tests {
             .map(|r| r.role_id.as_str())
             .collect();
         assert_eq!(ids, vec!["agent-b", "agent-c", "agent-a"]);
+    }
+
+    // ── extract_project_name tests ──
+
+    #[test]
+    fn test_extract_project_name_normal_path() {
+        assert_eq!(extract_project_name("/home/user/my-project"), "my-project");
+    }
+
+    #[test]
+    fn test_extract_project_name_worktree() {
+        assert_eq!(
+            extract_project_name("/home/user/repo/.claude/worktrees/feat/foo-123"),
+            "foo-123"
+        );
+    }
+
+    #[test]
+    fn test_extract_project_name_root() {
+        assert_eq!(extract_project_name("/"), "");
+    }
+
+    #[test]
+    fn test_extract_project_name_empty() {
+        assert_eq!(extract_project_name(""), "");
+    }
+
+    // ── display_name fallback tests ──
+
+    fn make_event_with_cwd(
+        event: &str,
+        agent_id: &str,
+        message: &str,
+        cwd: &str,
+        is_sidechain: bool,
+    ) -> Event {
+        Event {
+            id: "e0".to_string(),
+            agent_id: agent_id.to_string(),
+            event: event.to_string(),
+            status: "ok".to_string(),
+            latency_ms: None,
+            message: message.to_string(),
+            metadata: json!({}),
+            timestamp: "2025-01-01T00:00:00Z".to_string(),
+            received_at: "2025-01-01T00:00:00Z".to_string(),
+            model: String::new(),
+            is_sidechain,
+            session_id: String::new(),
+            cwd: cwd.to_string(),
+        }
+    }
+
+    #[test]
+    fn test_display_name_cwd_fallback() {
+        let app = make_test_app();
+        let evt = make_event_with_cwd(
+            "assistant_message",
+            "a1",
+            "hello",
+            "/home/user/my-project",
+            false,
+        );
+        append_event(&app, evt);
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.by_agent["a1"].display_name, "my-project");
+        assert!(!state.by_agent["a1"].display_name_from_user);
+    }
+
+    #[test]
+    fn test_display_name_user_message_overrides_cwd() {
+        let app = make_test_app();
+        // First: assistant with cwd → cwd fallback
+        append_event(
+            &app,
+            make_event_with_cwd("assistant_message", "a1", "hi", "/home/user/proj", false),
+        );
+        // Then: user message → overrides
+        append_event(
+            &app,
+            make_event_with_cwd(
+                "user_message",
+                "a1",
+                "Fix the bug",
+                "/home/user/proj",
+                false,
+            ),
+        );
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.by_agent["a1"].display_name, "Fix the bug");
+        assert!(state.by_agent["a1"].display_name_from_user);
+    }
+
+    #[test]
+    fn test_display_name_user_message_first() {
+        let app = make_test_app();
+        append_event(
+            &app,
+            make_event_with_cwd(
+                "user_message",
+                "a1",
+                "Do something",
+                "/home/user/proj",
+                false,
+            ),
+        );
+        append_event(
+            &app,
+            make_event_with_cwd("assistant_message", "a1", "ok", "/home/user/proj", false),
+        );
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.by_agent["a1"].display_name, "Do something");
+        assert!(state.by_agent["a1"].display_name_from_user);
+    }
+
+    #[test]
+    fn test_display_name_sidechain_suffix() {
+        let app = make_test_app();
+        let evt = make_event_with_cwd(
+            "assistant_message",
+            "agent-sub",
+            "hi",
+            "/home/user/my-project",
+            true,
+        );
+        append_event(&app, evt);
+        let state = app.state.lock().unwrap();
+        assert_eq!(
+            state.by_agent["agent-sub"].display_name,
+            "my-project (Agent)"
+        );
+    }
+
+    #[test]
+    fn test_display_name_worktree_cwd() {
+        let app = make_test_app();
+        let evt = make_event_with_cwd(
+            "tool_call",
+            "a1",
+            "bash",
+            "/home/user/repo/.claude/worktrees/feat/foo-123",
+            false,
+        );
+        append_event(&app, evt);
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.by_agent["a1"].display_name, "foo-123");
+    }
+
+    #[test]
+    fn test_display_name_empty_cwd_falls_back_to_empty() {
+        let app = make_test_app();
+        let evt = make_event_with_cwd("assistant_message", "a1", "hi", "", false);
+        append_event(&app, evt);
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.by_agent["a1"].display_name, "");
+    }
+
+    #[test]
+    fn test_display_name_not_overwritten_by_cwd_after_user_message() {
+        let app = make_test_app();
+        append_event(
+            &app,
+            make_event_with_cwd("user_message", "a1", "Fix login", "/home/user/proj", false),
+        );
+        append_event(
+            &app,
+            make_event_with_cwd(
+                "assistant_message",
+                "a1",
+                "ok",
+                "/home/user/other-proj",
+                false,
+            ),
+        );
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.by_agent["a1"].display_name, "Fix login");
+    }
+
+    #[test]
+    fn test_display_name_multiple_agents_independent() {
+        let app = make_test_app();
+        append_event(
+            &app,
+            make_event_with_cwd("assistant_message", "a1", "hi", "/home/user/proj-a", false),
+        );
+        append_event(
+            &app,
+            make_event_with_cwd("user_message", "a2", "Build it", "/home/user/proj-b", false),
+        );
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.by_agent["a1"].display_name, "proj-a");
+        assert_eq!(state.by_agent["a2"].display_name, "Build it");
+    }
+
+    #[test]
+    fn test_display_name_user_request_same_as_user_message() {
+        let app = make_test_app();
+        append_event(
+            &app,
+            make_event_with_cwd("assistant_message", "a1", "hi", "/home/user/proj", false),
+        );
+        append_event(
+            &app,
+            make_event_with_cwd("user_request", "a1", "Deploy app", "/home/user/proj", false),
+        );
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.by_agent["a1"].display_name, "Deploy app");
+        assert!(state.by_agent["a1"].display_name_from_user);
+    }
+
+    #[test]
+    fn test_extract_project_name_nested_worktree() {
+        assert_eq!(
+            extract_project_name("/home/user/repo/.claude/worktrees/fix/bug-42/subdir"),
+            "bug-42"
+        );
     }
 }

@@ -29,6 +29,8 @@ pub struct Event {
     pub model: String,
     pub is_sidechain: bool,
     pub session_id: String,
+    #[serde(skip)]
+    pub cwd: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -49,6 +51,8 @@ pub struct AgentRow {
     pub session_id: String,
     pub tool_use_counts: HashMap<String, u64>,
     pub display_name: String,
+    #[serde(skip)]
+    pub display_name_from_user: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -95,12 +99,6 @@ pub struct SessionRow {
     pub agent_ids: Vec<String>,
 }
 
-#[derive(Clone, Debug)]
-pub struct TokenSample {
-    pub tokens: u64,
-    pub sampled_at_dt: time::OffsetDateTime,
-}
-
 #[derive(Default)]
 pub struct State {
     pub recent: Vec<Event>,
@@ -112,8 +110,6 @@ pub struct State {
     pub token_total: u64,
     pub cost_total_usd: f64,
     pub tool_use_counts: HashMap<String, u64>,
-    pub token_samples: Vec<TokenSample>,
-    pub plan_limit: u64,
 }
 
 #[derive(Clone, Serialize)]

@@ -24,11 +24,6 @@ fn main() {
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(25);
-    let plan_limit = std::env::var("CLAUDE_PLAN_LIMIT")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(0);
-
     let claude_home = std::env::var("CLAUDE_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
@@ -40,10 +35,7 @@ fn main() {
     let listener = std::net::TcpListener::bind(format!("{}:{}", host, port)).expect("bind failed");
 
     let app = App {
-        state: Arc::new(Mutex::new(State {
-            plan_limit,
-            ..State::default()
-        })),
+        state: Arc::new(Mutex::new(State::default())),
         sse_clients: Arc::new(Mutex::new(Vec::new())),
         event_seq: Arc::new(AtomicU64::new(1)),
         public_dir: Arc::new(

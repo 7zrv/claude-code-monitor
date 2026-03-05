@@ -67,15 +67,10 @@ function renderCards(totals, agents = []) {
   const activeAgents = countActiveAgents(agents);
   const cards = buildCardData(totals, numberFmt, activeAgents);
   cardsRoot.innerHTML = cards
-    .map((c) => {
-      let html = `<article class="card card--${c.type}"><div class="label">${escapeHtml(c.label)}</div><div class="value">${escapeHtml(c.value)}</div>`;
-      if (c.progress != null) {
-        html += `<div class="progress-bar"><div class="progress-fill progress-fill--${c.type}" style="width:${Math.min(c.progress, 100)}%"></div></div>`;
-        if (c.sub) html += `<div class="card-sub">${escapeHtml(c.sub)}</div>`;
-      }
-      html += '</article>';
-      return html;
-    })
+    .map(
+      (c) =>
+        `<article class="card card--${c.type}"><div class="label">${escapeHtml(c.label)}</div><div class="value">${escapeHtml(c.value)}</div></article>`
+    )
     .join('');
 }
 
