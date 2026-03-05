@@ -7,7 +7,7 @@ use std::time::Duration;
 
 #[cfg(test)]
 use crate::state::broadcast_sse;
-use crate::state::build_snapshot;
+use crate::state::{build_snapshot, get_session_events};
 use crate::types::{App, ParsedRequest};
 use crate::utils::{bytes_response, content_type_for, json_response, now_iso};
 
@@ -148,6 +148,15 @@ pub fn handle_client(mut stream: TcpStream, app: App) {
                 let state = app.state.lock().unwrap_or_else(|e| e.into_inner());
                 json!({ "alerts": state.alerts.iter().take(50).cloned().collect::<Vec<_>>() })
                     .to_string()
+            };
+            let _ = stream.write_all(&json_response("200 OK", &body));
+        }
+        ("GET", path) if path.starts_with("/api/sessions/") && path.ends_with("/events") => {
+            let session_id = &path["/api/sessions/".len()..path.len() - "/events".len()];
+            let body = {
+                let state = app.state.lock().unwrap_or_else(|e| e.into_inner());
+                let events = get_session_events(&state, session_id);
+                serde_json::to_string(&events).unwrap_or_else(|_| "[]".to_string())
             };
             let _ = stream.write_all(&json_response("200 OK", &body));
         }
@@ -394,6 +403,50 @@ mod tests {
         );
         handle.join().unwrap();
         assert!(resp.contains("405 Method Not Allowed"));
+    }
+
+    #[test]
+    fn test_handle_client_session_events_200() {
+        use crate::state::append_event;
+        use crate::types::Event;
+
+        let app = make_test_app();
+        let evt = Event {
+            id: "e1".to_string(),
+            agent_id: "a1".to_string(),
+            event: "msg".to_string(),
+            status: "ok".to_string(),
+            latency_ms: None,
+            message: "hello".to_string(),
+            metadata: serde_json::json!({}),
+            timestamp: "2025-01-01T00:00:00Z".to_string(),
+            received_at: "2025-01-01T00:00:00Z".to_string(),
+            model: String::new(),
+            is_sidechain: false,
+            session_id: "sess-abc".to_string(),
+        };
+        append_event(&app, evt);
+
+        let (addr, handle) = spawn_test_server(app);
+        let resp = http_request(
+            &addr,
+            "GET /api/sessions/sess-abc/events HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        );
+        handle.join().unwrap();
+        assert!(resp.contains("200 OK"));
+        assert!(resp.contains("\"event\":\"msg\""));
+    }
+
+    #[test]
+    fn test_handle_client_session_events_empty_for_unknown() {
+        let (addr, handle) = spawn_test_server(make_test_app());
+        let resp = http_request(
+            &addr,
+            "GET /api/sessions/nonexistent/events HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        );
+        handle.join().unwrap();
+        assert!(resp.contains("200 OK"));
+        assert!(resp.contains("[]"));
     }
 
     #[test]

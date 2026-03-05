@@ -108,6 +108,7 @@ pub struct State {
     pub by_agent: HashMap<String, AgentRow>,
     pub by_source: HashMap<String, SourceRow>,
     pub by_session: HashMap<String, SessionRow>,
+    pub events_by_session: HashMap<String, Vec<Event>>,
     pub token_total: u64,
     pub cost_total_usd: f64,
     pub tool_use_counts: HashMap<String, u64>,
