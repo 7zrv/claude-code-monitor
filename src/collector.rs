@@ -85,6 +85,7 @@ pub fn parse_history_event(line: &str, app: &App) -> Option<Event> {
         model: String::new(),
         is_sidechain: false,
         session_id: String::new(),
+        cwd: String::new(),
     })
 }
 
@@ -117,6 +118,11 @@ pub fn parse_session_line(line: &str, app: &App) -> Vec<Event> {
         .and_then(|t| t.as_str())
         .map(|s| s.to_string())
         .unwrap_or_else(now_iso);
+    let cwd = v
+        .get("cwd")
+        .and_then(|c| c.as_str())
+        .unwrap_or("")
+        .to_string();
 
     match msg_type {
         "user" => {
@@ -147,6 +153,7 @@ pub fn parse_session_line(line: &str, app: &App) -> Vec<Event> {
                 model: String::new(),
                 is_sidechain,
                 session_id: session_id.clone(),
+                cwd: cwd.clone(),
             }]
         }
         "assistant" => {
@@ -186,6 +193,7 @@ pub fn parse_session_line(line: &str, app: &App) -> Vec<Event> {
                                     model: model.clone(),
                                     is_sidechain,
                                     session_id: session_id.clone(),
+                                    cwd: cwd.clone(),
                                 });
                             }
                         }
@@ -214,6 +222,7 @@ pub fn parse_session_line(line: &str, app: &App) -> Vec<Event> {
                                 model: model.clone(),
                                 is_sidechain,
                                 session_id: session_id.clone(),
+                                cwd: cwd.clone(),
                             });
                         }
                         _ => {}
@@ -261,6 +270,7 @@ pub fn parse_session_line(line: &str, app: &App) -> Vec<Event> {
                         model: model.clone(),
                         is_sidechain,
                         session_id: session_id.clone(),
+                        cwd: cwd.clone(),
                     });
                 }
             }
@@ -394,6 +404,7 @@ pub fn poll_stats_cache(
         model: String::new(),
         is_sidechain: false,
         session_id: String::new(),
+        cwd: String::new(),
     })
 }
 
@@ -910,5 +921,48 @@ mod tests {
         assert_eq!(state.recent.len(), 1);
         assert_eq!(state.recent[0].event, "user_message");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── cwd parsing tests ──
+
+    #[test]
+    fn test_parse_session_line_user_includes_cwd() {
+        let app = make_test_app();
+        let line = r#"{"type":"user","message":{"content":"hi"},"sessionId":"s1","timestamp":"2025-01-01T00:00:00Z","cwd":"/home/user/my-project"}"#;
+        let events = parse_session_line(line, &app);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].cwd, "/home/user/my-project");
+    }
+
+    #[test]
+    fn test_parse_session_line_assistant_includes_cwd() {
+        let app = make_test_app();
+        let line = r#"{"type":"assistant","message":{"model":"m","content":[{"type":"text","text":"hi"}]},"sessionId":"s1","timestamp":"2025-01-01T00:00:00Z","cwd":"/home/user/proj"}"#;
+        let events = parse_session_line(line, &app);
+        assert!(!events.is_empty());
+        assert_eq!(events[0].cwd, "/home/user/proj");
+    }
+
+    #[test]
+    fn test_parse_session_line_missing_cwd_defaults_empty() {
+        let app = make_test_app();
+        let line = r#"{"type":"user","message":{"content":"hi"},"sessionId":"s1","timestamp":"2025-01-01T00:00:00Z"}"#;
+        let events = parse_session_line(line, &app);
+        assert_eq!(events[0].cwd, "");
+    }
+
+    #[test]
+    fn test_parse_session_line_cwd_in_all_generated_events() {
+        let app = make_test_app();
+        let line = r#"{"type":"assistant","message":{"model":"m","content":[{"type":"text","text":"hi"},{"type":"tool_use","name":"bash","input":{}}],"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0}},"sessionId":"s1","timestamp":"2025-01-01T00:00:00Z","cwd":"/home/user/proj"}"#;
+        let events = parse_session_line(line, &app);
+        assert!(events.len() >= 3); // text + tool_use + token_usage
+        for evt in &events {
+            assert_eq!(
+                evt.cwd, "/home/user/proj",
+                "event {} missing cwd",
+                evt.event
+            );
+        }
     }
 }

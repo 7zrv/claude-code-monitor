@@ -110,14 +110,13 @@ pub fn build_snapshot(state: &State) -> Snapshot {
     let totals = agents.iter().fold(
         json!({
             "agents": agents.len(),
-            "total": 0, "ok": 0, "warning": 0, "error": 0,
+            "total": 0,
+            "ok": 0,
+            "warning": 0,
+            "error": 0,
             "tokenTotal": 0,
             "costTotalUsd": state.cost_total_usd,
             "sessions": state.by_session.len(),
-            "tokenBurnRate": burn_rate,
-            "planLimit": state.plan_limit,
-            "planUsagePercent": plan_usage_percent,
-            "minutesToLimit": minutes_to_limit,
         }),
         |mut acc, row| {
             acc["total"] = json!(acc["total"].as_u64().unwrap_or(0) + row.total);
@@ -170,6 +169,31 @@ pub fn build_snapshot(state: &State) -> Snapshot {
     }
 }
 
+pub fn extract_project_name(cwd: &str) -> &str {
+    if cwd.is_empty() {
+        return "";
+    }
+    // Detect .claude/worktrees/<prefix>/<name> pattern
+    if let Some(pos) = cwd.find("/.claude/worktrees/") {
+        let after = &cwd[pos + "/.claude/worktrees/".len()..];
+        // Take the second segment (after prefix like feat/, fix/, etc.)
+        let mut segments = after.split('/');
+        let first = segments.next().unwrap_or("");
+        let second = segments.next().unwrap_or("");
+        if !second.is_empty() {
+            return second;
+        }
+        if !first.is_empty() {
+            return first;
+        }
+    }
+    // Fallback: last path component
+    std::path::Path::new(cwd)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+}
+
 pub fn append_event(app: &App, evt: Event) {
     {
         let mut state = app.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -197,6 +221,7 @@ pub fn append_event(app: &App, evt: Event) {
                 session_id: evt.session_id.clone(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: String::new(),
+                display_name_from_user: false,
             });
 
         row.last_seen = evt.received_at.clone();
@@ -211,8 +236,8 @@ pub fn append_event(app: &App, evt: Event) {
             row.session_id = evt.session_id.clone();
         }
         if (evt.event == "user_message" || evt.event == "user_request")
-            && row.display_name.is_empty()
             && !evt.message.is_empty()
+            && !row.display_name_from_user
         {
             let mut chars = evt.message.chars();
             let truncated: String = chars.by_ref().take(40).collect();
@@ -220,6 +245,16 @@ pub fn append_event(app: &App, evt: Event) {
                 row.display_name = format!("{}...", truncated);
             } else {
                 row.display_name = truncated;
+            }
+            row.display_name_from_user = true;
+        } else if !row.display_name_from_user && !evt.cwd.is_empty() {
+            let project = extract_project_name(&evt.cwd);
+            if !project.is_empty() {
+                row.display_name = if evt.is_sidechain {
+                    format!("{} (Agent)", project)
+                } else {
+                    project.to_string()
+                };
             }
         }
 
@@ -419,6 +454,7 @@ mod tests {
             model: String::new(),
             is_sidechain: false,
             session_id: String::new(),
+            cwd: String::new(),
         }
     }
 
@@ -466,6 +502,7 @@ mod tests {
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: String::new(),
+                display_name_from_user: false,
             },
         );
         // 10초 후 → running
@@ -497,6 +534,7 @@ mod tests {
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: String::new(),
+                display_name_from_user: false,
             },
         );
         // at-risk는 시간 무관
@@ -525,6 +563,7 @@ mod tests {
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: String::new(),
+                display_name_from_user: false,
             },
         );
         // blocked는 시간 무관
@@ -554,6 +593,7 @@ mod tests {
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: String::new(),
+                display_name_from_user: false,
             },
         );
         // 3분 경과, total=0 → completed
@@ -585,6 +625,7 @@ mod tests {
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: String::new(),
+                display_name_from_user: false,
             },
         );
         // 3분 경과 → completed
@@ -615,6 +656,7 @@ mod tests {
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: String::new(),
+                display_name_from_user: false,
             },
         );
         // 60초 경과 → idle
@@ -645,6 +687,7 @@ mod tests {
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: String::new(),
+                display_name_from_user: false,
             },
         );
         // 5초 경과 → running
@@ -675,6 +718,7 @@ mod tests {
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: String::new(),
+                display_name_from_user: false,
             },
         );
         // 10분 경과해도 error면 blocked
@@ -705,6 +749,7 @@ mod tests {
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: String::new(),
+                display_name_from_user: false,
             },
         );
         // 10분 경과해도 warning이면 at-risk
@@ -746,6 +791,7 @@ mod tests {
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: String::new(),
+                display_name_from_user: false,
             },
         );
         state.by_agent.insert(
@@ -766,6 +812,7 @@ mod tests {
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: String::new(),
+                display_name_from_user: false,
             },
         );
         let snap = build_snapshot(&state);
@@ -1061,6 +1108,7 @@ mod tests {
                 session_id: String::new(),
                 tool_use_counts: std::collections::HashMap::new(),
                 display_name: "Fix login bug".to_string(),
+                display_name_from_user: false,
             },
         );
         let row = workflow_row(&state, "agent-1");
@@ -1106,6 +1154,7 @@ mod tests {
             model: String::new(),
             is_sidechain: false,
             session_id: session_id.to_string(),
+            cwd: String::new(),
         }
     }
 
@@ -1510,6 +1559,7 @@ mod tests {
                     session_id: String::new(),
                     tool_use_counts: std::collections::HashMap::new(),
                     display_name: String::new(),
+                    display_name_from_user: false,
                 },
             );
         }
@@ -1520,5 +1570,221 @@ mod tests {
             .map(|r| r.role_id.as_str())
             .collect();
         assert_eq!(ids, vec!["agent-b", "agent-c", "agent-a"]);
+    }
+
+    // ── extract_project_name tests ──
+
+    #[test]
+    fn test_extract_project_name_normal_path() {
+        assert_eq!(extract_project_name("/home/user/my-project"), "my-project");
+    }
+
+    #[test]
+    fn test_extract_project_name_worktree() {
+        assert_eq!(
+            extract_project_name("/home/user/repo/.claude/worktrees/feat/foo-123"),
+            "foo-123"
+        );
+    }
+
+    #[test]
+    fn test_extract_project_name_root() {
+        assert_eq!(extract_project_name("/"), "");
+    }
+
+    #[test]
+    fn test_extract_project_name_empty() {
+        assert_eq!(extract_project_name(""), "");
+    }
+
+    // ── display_name fallback tests ──
+
+    fn make_event_with_cwd(
+        event: &str,
+        agent_id: &str,
+        message: &str,
+        cwd: &str,
+        is_sidechain: bool,
+    ) -> Event {
+        Event {
+            id: "e0".to_string(),
+            agent_id: agent_id.to_string(),
+            event: event.to_string(),
+            status: "ok".to_string(),
+            latency_ms: None,
+            message: message.to_string(),
+            metadata: json!({}),
+            timestamp: "2025-01-01T00:00:00Z".to_string(),
+            received_at: "2025-01-01T00:00:00Z".to_string(),
+            model: String::new(),
+            is_sidechain,
+            session_id: String::new(),
+            cwd: cwd.to_string(),
+        }
+    }
+
+    #[test]
+    fn test_display_name_cwd_fallback() {
+        let app = make_test_app();
+        let evt = make_event_with_cwd(
+            "assistant_message",
+            "a1",
+            "hello",
+            "/home/user/my-project",
+            false,
+        );
+        append_event(&app, evt);
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.by_agent["a1"].display_name, "my-project");
+        assert!(!state.by_agent["a1"].display_name_from_user);
+    }
+
+    #[test]
+    fn test_display_name_user_message_overrides_cwd() {
+        let app = make_test_app();
+        // First: assistant with cwd → cwd fallback
+        append_event(
+            &app,
+            make_event_with_cwd("assistant_message", "a1", "hi", "/home/user/proj", false),
+        );
+        // Then: user message → overrides
+        append_event(
+            &app,
+            make_event_with_cwd(
+                "user_message",
+                "a1",
+                "Fix the bug",
+                "/home/user/proj",
+                false,
+            ),
+        );
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.by_agent["a1"].display_name, "Fix the bug");
+        assert!(state.by_agent["a1"].display_name_from_user);
+    }
+
+    #[test]
+    fn test_display_name_user_message_first() {
+        let app = make_test_app();
+        append_event(
+            &app,
+            make_event_with_cwd(
+                "user_message",
+                "a1",
+                "Do something",
+                "/home/user/proj",
+                false,
+            ),
+        );
+        append_event(
+            &app,
+            make_event_with_cwd("assistant_message", "a1", "ok", "/home/user/proj", false),
+        );
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.by_agent["a1"].display_name, "Do something");
+        assert!(state.by_agent["a1"].display_name_from_user);
+    }
+
+    #[test]
+    fn test_display_name_sidechain_suffix() {
+        let app = make_test_app();
+        let evt = make_event_with_cwd(
+            "assistant_message",
+            "agent-sub",
+            "hi",
+            "/home/user/my-project",
+            true,
+        );
+        append_event(&app, evt);
+        let state = app.state.lock().unwrap();
+        assert_eq!(
+            state.by_agent["agent-sub"].display_name,
+            "my-project (Agent)"
+        );
+    }
+
+    #[test]
+    fn test_display_name_worktree_cwd() {
+        let app = make_test_app();
+        let evt = make_event_with_cwd(
+            "tool_call",
+            "a1",
+            "bash",
+            "/home/user/repo/.claude/worktrees/feat/foo-123",
+            false,
+        );
+        append_event(&app, evt);
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.by_agent["a1"].display_name, "foo-123");
+    }
+
+    #[test]
+    fn test_display_name_empty_cwd_falls_back_to_empty() {
+        let app = make_test_app();
+        let evt = make_event_with_cwd("assistant_message", "a1", "hi", "", false);
+        append_event(&app, evt);
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.by_agent["a1"].display_name, "");
+    }
+
+    #[test]
+    fn test_display_name_not_overwritten_by_cwd_after_user_message() {
+        let app = make_test_app();
+        append_event(
+            &app,
+            make_event_with_cwd("user_message", "a1", "Fix login", "/home/user/proj", false),
+        );
+        append_event(
+            &app,
+            make_event_with_cwd(
+                "assistant_message",
+                "a1",
+                "ok",
+                "/home/user/other-proj",
+                false,
+            ),
+        );
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.by_agent["a1"].display_name, "Fix login");
+    }
+
+    #[test]
+    fn test_display_name_multiple_agents_independent() {
+        let app = make_test_app();
+        append_event(
+            &app,
+            make_event_with_cwd("assistant_message", "a1", "hi", "/home/user/proj-a", false),
+        );
+        append_event(
+            &app,
+            make_event_with_cwd("user_message", "a2", "Build it", "/home/user/proj-b", false),
+        );
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.by_agent["a1"].display_name, "proj-a");
+        assert_eq!(state.by_agent["a2"].display_name, "Build it");
+    }
+
+    #[test]
+    fn test_display_name_user_request_same_as_user_message() {
+        let app = make_test_app();
+        append_event(
+            &app,
+            make_event_with_cwd("assistant_message", "a1", "hi", "/home/user/proj", false),
+        );
+        append_event(
+            &app,
+            make_event_with_cwd("user_request", "a1", "Deploy app", "/home/user/proj", false),
+        );
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.by_agent["a1"].display_name, "Deploy app");
+        assert!(state.by_agent["a1"].display_name_from_user);
+    }
+
+    #[test]
+    fn test_extract_project_name_nested_worktree() {
+        assert_eq!(
+            extract_project_name("/home/user/repo/.claude/worktrees/fix/bug-42/subdir"),
+            "bug-42"
+        );
     }
 }

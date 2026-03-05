@@ -29,6 +29,8 @@ pub struct Event {
     pub model: String,
     pub is_sidechain: bool,
     pub session_id: String,
+    #[serde(skip)]
+    pub cwd: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -49,6 +51,8 @@ pub struct AgentRow {
     pub session_id: String,
     pub tool_use_counts: HashMap<String, u64>,
     pub display_name: String,
+    #[serde(skip)]
+    pub display_name_from_user: bool,
 }
 
 #[derive(Clone, Serialize)]
