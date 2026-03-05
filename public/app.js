@@ -9,6 +9,7 @@ import { getFilteredEvents, renderEventMeta, renderEvents } from './lib/renders/
 import { renderAgents, populateAgentFilter } from './lib/renders/agents.js';
 import { renderAlerts } from './lib/renders/alerts.js';
 import { renderTimeline } from './lib/renders/timeline.js';
+import { renderSessionsList, renderSessionDetail, fetchSessionEvents } from './lib/renders/sessions.js';
 
 const cardsRoot = document.getElementById('cards');
 const workflowRoot = document.getElementById('workflow');
@@ -25,6 +26,12 @@ const eventSearch = document.getElementById('eventSearch');
 const eventMetaEl = document.getElementById('eventMeta');
 const timelineRoot = document.getElementById('timeline');
 const timelineTooltip = document.getElementById('timelineTooltip');
+
+const sessionsListRoot = document.getElementById('sessionsList');
+const sessionDetailRoot = document.getElementById('sessionDetail');
+const sessionDetailBack = document.getElementById('sessionDetailBack');
+const sessionDetailTitle = document.getElementById('sessionDetailTitle');
+const sessionDetailEvents = document.getElementById('sessionDetailEvents');
 
 const chartEls = {
   throughputChart: document.getElementById('throughputChart'),
@@ -112,6 +119,11 @@ function renderSnapshot(snapshot) {
   renderEvents(filteredEvents, eventsRoot);
   renderEventMeta(allEvents.length, filteredEvents.length, eventMetaEl);
   renderAlerts(snapshot.alerts || [], alertsRoot, alertDrilldownRoot, snapshot);
+  if (!sessionDetailRoot.hidden) {
+    // keep detail view open; don't overwrite
+  } else {
+    renderSessionsList(snapshot.sessions || [], sessionsListRoot, openSessionDetail);
+  }
   clock.textContent = `Last refresh: ${new Date(snapshot.generatedAt).toLocaleTimeString()}`;
 }
 
@@ -134,6 +146,26 @@ function refilterEvents() {
   renderEvents(filtered, eventsRoot);
   renderEventMeta(allEvents.length, filtered.length, eventMetaEl);
 }
+
+function openSessionDetail(sessionId) {
+  sessionsListRoot.hidden = true;
+  sessionDetailRoot.hidden = false;
+  sessionDetailTitle.textContent = sessionId;
+  sessionDetailEvents.innerHTML = '<p>로딩 중...</p>';
+  fetchSessionEvents(sessionId).then((events) => {
+    renderSessionDetail(events, sessionDetailEvents);
+  }).catch(() => {
+    sessionDetailEvents.innerHTML = '<p>이벤트를 불러올 수 없습니다.</p>';
+  });
+}
+
+sessionDetailBack.addEventListener('click', () => {
+  sessionDetailRoot.hidden = true;
+  sessionsListRoot.hidden = false;
+  if (snapshotState) {
+    renderSessionsList(snapshotState.sessions || [], sessionsListRoot, openSessionDetail);
+  }
+});
 
 workflowToggle.addEventListener('click', () => {
   showCompleted = !showCompleted;

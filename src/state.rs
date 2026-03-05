@@ -80,6 +80,14 @@ fn workflow_row_at(state: &State, role_id: &str, now: OffsetDateTime) -> Workflo
     }
 }
 
+pub fn get_session_events(state: &State, session_id: &str) -> Vec<Event> {
+    state
+        .events_by_session
+        .get(session_id)
+        .cloned()
+        .unwrap_or_default()
+}
+
 pub fn build_snapshot(state: &State) -> Snapshot {
     let mut agents: Vec<AgentRow> = state.by_agent.values().cloned().collect();
     agents.sort_by(|a, b| a.agent_id.cmp(&b.agent_id));
@@ -295,6 +303,16 @@ pub fn append_event(app: &App, evt: Event) {
                 session.agent_ids.push(evt.agent_id.clone());
             }
 
+            let session_events = state
+                .events_by_session
+                .entry(evt.session_id.clone())
+                .or_default();
+            session_events.push(evt.clone());
+            if session_events.len() > 500 {
+                let excess = session_events.len() - 500;
+                session_events.drain(..excess);
+            }
+
             if state.by_session.len() > 200 {
                 if let Some(oldest_key) = state
                     .by_session
@@ -303,6 +321,7 @@ pub fn append_event(app: &App, evt: Event) {
                     .min_by(|a, b| a.1.last_seen.cmp(&b.1.last_seen))
                     .map(|(k, _)| k.clone())
                 {
+                    state.events_by_session.remove(&oldest_key);
                     state.by_session.remove(&oldest_key);
                 }
             }
@@ -1396,6 +1415,72 @@ mod tests {
         // token_total > plan_limit
         let result = calc_time_to_limit(15000, 10000, 100.0);
         assert!(result.unwrap() < 0.0);
+    }
+
+    // ── Session events (drill-down) tests ──
+
+    #[test]
+    fn test_append_event_stores_event_in_events_by_session() {
+        let app = make_test_app();
+        append_event(
+            &app,
+            make_test_event_with_session("ok", "msg", "a1", "sess-1", json!({})),
+        );
+        append_event(
+            &app,
+            make_test_event_with_session("ok", "msg2", "a1", "sess-1", json!({})),
+        );
+        let state = app.state.lock().unwrap();
+        let events = &state.events_by_session["sess-1"];
+        assert_eq!(events.len(), 2);
+    }
+
+    #[test]
+    fn test_append_event_events_by_session_truncates_at_500() {
+        let app = make_test_app();
+        for i in 0..510 {
+            append_event(
+                &app,
+                make_test_event_with_session("ok", &format!("e{}", i), "a1", "sess-1", json!({})),
+            );
+        }
+        let state = app.state.lock().unwrap();
+        let events = &state.events_by_session["sess-1"];
+        assert_eq!(events.len(), 500);
+        // newest event should be last
+        assert_eq!(events[499].event, "e509");
+    }
+
+    #[test]
+    fn test_append_event_skips_events_by_session_when_empty_id() {
+        let app = make_test_app();
+        append_event(
+            &app,
+            make_test_event_with_session("ok", "msg", "a1", "", json!({})),
+        );
+        let state = app.state.lock().unwrap();
+        assert!(state.events_by_session.is_empty());
+    }
+
+    #[test]
+    fn test_get_session_events_returns_events() {
+        let mut state = State::default();
+        let evt = make_test_event_with_session("ok", "msg", "a1", "sess-1", json!({}));
+        state
+            .events_by_session
+            .entry("sess-1".to_string())
+            .or_default()
+            .push(evt);
+        let events = get_session_events(&state, "sess-1");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event, "msg");
+    }
+
+    #[test]
+    fn test_get_session_events_empty_for_unknown() {
+        let state = State::default();
+        let events = get_session_events(&state, "nonexistent");
+        assert!(events.is_empty());
     }
 
     #[test]
