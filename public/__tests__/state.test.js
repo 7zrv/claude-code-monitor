@@ -29,11 +29,12 @@ describe('extractAgentMeta', () => {
 
 function makeState() {
   return {
-    totals: { total: 0, ok: 0, warning: 0, error: 0, agents: 0, tokenTotal: 0 },
+    totals: { total: 0, ok: 0, warning: 0, error: 0, agents: 0, tokenTotal: 0, sessions: 0 },
     agents: [],
     sources: [],
     recent: [],
     alerts: [],
+    sessions: [],
     workflowProgress: [],
     generatedAt: ''
   };
@@ -193,5 +194,60 @@ describe('applyIncrementalEvent', () => {
     const state = makeState();
     applyIncrementalEvent(state, makeEvent());
     assert.ok(state.generatedAt);
+  });
+
+  it('skips session when sessionId absent', () => {
+    const state = makeState();
+    applyIncrementalEvent(state, makeEvent({ agentId: 'a1' }));
+    assert.equal(state.sessions.length, 0);
+  });
+
+  it('creates session entry when sessionId present', () => {
+    const state = makeState();
+    applyIncrementalEvent(state, makeEvent({ agentId: 'a1', sessionId: 'sess-1' }));
+    assert.equal(state.sessions.length, 1);
+    assert.equal(state.sessions[0].sessionId, 'sess-1');
+    assert.deepEqual(state.sessions[0].agentIds, ['a1']);
+    assert.equal(state.totals.sessions, 1);
+  });
+
+  it('updates existing session entry', () => {
+    const state = makeState();
+    applyIncrementalEvent(state, makeEvent({ agentId: 'a1', sessionId: 'sess-1' }));
+    applyIncrementalEvent(state, makeEvent({ agentId: 'a2', sessionId: 'sess-1' }));
+    assert.equal(state.sessions.length, 1);
+    assert.deepEqual(state.sessions[0].agentIds, ['a1', 'a2']);
+  });
+
+  it('does not duplicate agent_id in session', () => {
+    const state = makeState();
+    applyIncrementalEvent(state, makeEvent({ agentId: 'a1', sessionId: 'sess-1' }));
+    applyIncrementalEvent(state, makeEvent({ agentId: 'a1', sessionId: 'sess-1' }));
+    assert.deepEqual(state.sessions[0].agentIds, ['a1']);
+  });
+
+  it('accumulates session tokenTotal', () => {
+    const state = makeState();
+    applyIncrementalEvent(state, makeEvent({
+      agentId: 'a1', sessionId: 'sess-1',
+      metadata: { tokenUsage: { totalTokens: 300 } }
+    }));
+    assert.equal(state.sessions[0].tokenTotal, 300);
+  });
+
+  it('accumulates session costUsd on cost_update', () => {
+    const state = makeState();
+    applyIncrementalEvent(state, makeEvent({
+      agentId: 'a1', sessionId: 'sess-1', event: 'cost_update',
+      metadata: { costDelta: 0.07 }
+    }));
+    assert.ok(Math.abs(state.sessions[0].costUsd - 0.07) < 1e-9);
+  });
+
+  it('updates totals.sessions count', () => {
+    const state = makeState();
+    applyIncrementalEvent(state, makeEvent({ agentId: 'a1', sessionId: 's1' }));
+    applyIncrementalEvent(state, makeEvent({ agentId: 'a2', sessionId: 's2' }));
+    assert.equal(state.totals.sessions, 2);
   });
 });

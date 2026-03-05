@@ -88,6 +88,33 @@ export function applyIncrementalEvent(state, evt) {
     state.alerts = state.alerts.slice(0, 20);
   }
 
+  const sessionId = evt.sessionId || evt.metadata?.sessionId || '';
+  if (sessionId) {
+    if (!state.sessions) state.sessions = [];
+    const costDelta = evt.event === 'cost_update'
+      ? (evt.metadata?.costDelta > 0 ? evt.metadata.costDelta : 0)
+      : 0;
+    const session = state.sessions.find((s) => s.sessionId === sessionId);
+    if (!session) {
+      state.sessions.push({
+        sessionId,
+        lastSeen: evt.receivedAt,
+        tokenTotal: evtTokenTotal,
+        costUsd: costDelta,
+        agentIds: [evt.agentId]
+      });
+    } else {
+      session.lastSeen = evt.receivedAt;
+      session.tokenTotal = (session.tokenTotal || 0) + evtTokenTotal;
+      session.costUsd = (session.costUsd || 0) + costDelta;
+      if (!session.agentIds.includes(evt.agentId)) {
+        session.agentIds.push(evt.agentId);
+      }
+    }
+    state.sessions.sort((a, b) => b.lastSeen.localeCompare(a.lastSeen));
+    totals.sessions = state.sessions.length;
+  }
+
   state.workflowProgress = recalcWorkflow(state.agents);
   state.generatedAt = new Date().toISOString();
 }
