@@ -4,8 +4,8 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 use crate::types::{
-    AgentRow, AlertRow, App, Event, SessionRow, Snapshot, SourceRow, State, ToolCallStat,
-    WorkflowRow,
+    AgentRow, AlertRow, App, Event, HourBucket, SessionRow, Snapshot, SourceRow, State,
+    ToolCallStat, WorkflowRow,
 };
 use crate::utils::now_iso;
 
@@ -112,6 +112,8 @@ pub fn build_snapshot(state: &State) -> Snapshot {
         sources,
         recent: state.recent.iter().take(300).cloned().collect(),
         alerts: state.alerts.iter().take(20).cloned().collect(),
+        started_at: state.started_at.clone(),
+        hourly_buckets: state.hourly_buckets.clone(),
         workflow_progress: {
             let mut rows: Vec<WorkflowRow> = state
                 .by_agent
@@ -264,6 +266,31 @@ pub fn append_event(app: &App, evt: Event) {
         if cost_delta > 0.0 {
             state.cost_total_usd += cost_delta;
         }
+
+        if (token_total > 0 || cost_delta > 0.0) && evt.received_at.len() >= 13 {
+            let hour_key = &evt.received_at[..13];
+            // rev() scan is O(1) in normal operation (latest bucket matches);
+            // worst-case O(744) for backfilled events, acceptable for bounded vec.
+            if let Some(bucket) = state
+                .hourly_buckets
+                .iter_mut()
+                .rev()
+                .find(|b| b.hour_key == hour_key)
+            {
+                bucket.token_total += token_total;
+                bucket.cost_usd += cost_delta;
+            } else {
+                state.hourly_buckets.push(HourBucket {
+                    hour_key: hour_key.to_string(),
+                    token_total,
+                    cost_usd: cost_delta,
+                });
+                if state.hourly_buckets.len() > 744 {
+                    state.hourly_buckets.remove(0);
+                }
+            }
+        }
+
         if evt.event == "tool_call" {
             *state
                 .tool_use_counts
@@ -1589,5 +1616,133 @@ mod tests {
             extract_project_name("/home/user/repo/.claude/worktrees/fix/bug-42/subdir"),
             "bug-42"
         );
+    }
+
+    // ── Hourly bucket tests ──
+
+    fn make_event_with_received_at(
+        event: &str,
+        received_at: &str,
+        metadata: serde_json::Value,
+    ) -> Event {
+        Event {
+            id: "e0".to_string(),
+            agent_id: "a1".to_string(),
+            event: event.to_string(),
+            status: "ok".to_string(),
+            latency_ms: None,
+            message: "test".to_string(),
+            metadata,
+            timestamp: received_at.to_string(),
+            received_at: received_at.to_string(),
+            model: String::new(),
+            is_sidechain: false,
+            session_id: String::new(),
+            cwd: String::new(),
+        }
+    }
+
+    #[test]
+    fn test_hourly_bucket_created_on_token_event() {
+        let app = make_test_app();
+        let meta = json!({ "tokenUsage": { "totalTokens": 100 } });
+        let evt = make_event_with_received_at("msg", "2025-01-01T14:00:00Z", meta);
+        append_event(&app, evt);
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.hourly_buckets.len(), 1);
+        assert_eq!(state.hourly_buckets[0].hour_key, "2025-01-01T14");
+        assert_eq!(state.hourly_buckets[0].token_total, 100);
+    }
+
+    #[test]
+    fn test_hourly_bucket_accumulates_same_hour() {
+        let app = make_test_app();
+        let meta1 = json!({ "tokenUsage": { "totalTokens": 100 } });
+        let evt1 = make_event_with_received_at("msg", "2025-01-01T14:00:00Z", meta1);
+        let meta2 = json!({ "tokenUsage": { "totalTokens": 200 } });
+        let evt2 = make_event_with_received_at("msg", "2025-01-01T14:30:00Z", meta2);
+        append_event(&app, evt1);
+        append_event(&app, evt2);
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.hourly_buckets.len(), 1);
+        assert_eq!(state.hourly_buckets[0].token_total, 300);
+    }
+
+    #[test]
+    fn test_hourly_bucket_new_hour_creates_new() {
+        let app = make_test_app();
+        let meta1 = json!({ "tokenUsage": { "totalTokens": 100 } });
+        let evt1 = make_event_with_received_at("msg", "2025-01-01T14:00:00Z", meta1);
+        let meta2 = json!({ "tokenUsage": { "totalTokens": 200 } });
+        let evt2 = make_event_with_received_at("msg", "2025-01-01T15:00:00Z", meta2);
+        append_event(&app, evt1);
+        append_event(&app, evt2);
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.hourly_buckets.len(), 2);
+        assert_eq!(state.hourly_buckets[0].hour_key, "2025-01-01T14");
+        assert_eq!(state.hourly_buckets[1].hour_key, "2025-01-01T15");
+    }
+
+    #[test]
+    fn test_hourly_bucket_max_744() {
+        let app = make_test_app();
+        for i in 0..745 {
+            let hour = i % 24;
+            let day = 1 + i / 24;
+            let received_at = format!(
+                "2025-{:02}-{:02}T{:02}:00:00Z",
+                (day / 28) + 1,
+                (day % 28) + 1,
+                hour
+            );
+            let meta = json!({ "tokenUsage": { "totalTokens": 1 } });
+            let evt = make_event_with_received_at("msg", &received_at, meta);
+            append_event(&app, evt);
+        }
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.hourly_buckets.len(), 744);
+    }
+
+    #[test]
+    fn test_hourly_bucket_cost_only() {
+        let app = make_test_app();
+        let meta = json!({ "costDelta": 0.05 });
+        let evt = make_event_with_received_at("cost_update", "2025-01-01T14:00:00Z", meta);
+        append_event(&app, evt);
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.hourly_buckets.len(), 1);
+        assert_eq!(state.hourly_buckets[0].token_total, 0);
+        assert!((state.hourly_buckets[0].cost_usd - 0.05).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_hourly_bucket_no_token_no_cost_skipped() {
+        let app = make_test_app();
+        let evt = make_event_with_received_at("msg", "2025-01-01T14:00:00Z", json!({}));
+        append_event(&app, evt);
+        let state = app.state.lock().unwrap();
+        assert!(state.hourly_buckets.is_empty());
+    }
+
+    #[test]
+    fn test_snapshot_includes_started_at() {
+        let mut state = State::default();
+        state.started_at = "2025-01-01T00:00:00Z".to_string();
+        let snap = build_snapshot(&state);
+        assert_eq!(snap.started_at, "2025-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn test_snapshot_includes_hourly_buckets() {
+        let mut state = State::default();
+        state.hourly_buckets.push(HourBucket {
+            hour_key: "2025-01-01T14".to_string(),
+            token_total: 500,
+            cost_usd: 0.10,
+        });
+        let snap = build_snapshot(&state);
+        assert_eq!(snap.hourly_buckets.len(), 1);
+        assert_eq!(snap.hourly_buckets[0].hour_key, "2025-01-01T14");
+        assert_eq!(snap.hourly_buckets[0].token_total, 500);
     }
 }

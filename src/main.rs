@@ -12,6 +12,7 @@ use std::thread;
 use collector::spawn_claude_collector;
 use http::{handle_client, spawn_sse_sweeper};
 use types::{App, State};
+use utils::now_iso;
 
 fn main() {
     let host = std::env::var("HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
@@ -35,7 +36,10 @@ fn main() {
     let listener = std::net::TcpListener::bind(format!("{}:{}", host, port)).expect("bind failed");
 
     let app = App {
-        state: Arc::new(Mutex::new(State::default())),
+        state: Arc::new(Mutex::new(State {
+            started_at: now_iso(),
+            ..State::default()
+        })),
         sse_clients: Arc::new(Mutex::new(Vec::new())),
         event_seq: Arc::new(AtomicU64::new(1)),
         public_dir: Arc::new(
