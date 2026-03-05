@@ -424,6 +424,7 @@ mod tests {
             model: String::new(),
             is_sidechain: false,
             session_id: "sess-abc".to_string(),
+            cwd: String::new(),
         };
         append_event(&app, evt);
 
