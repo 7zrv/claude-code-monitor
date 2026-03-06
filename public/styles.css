@@ -92,6 +92,33 @@ main {
   padding-bottom: 24px;
 }
 
+.time-range-bar {
+  display: flex;
+  gap: 6px;
+  margin: 16px 0 0;
+}
+
+.range-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--warm-text);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.range-btn:hover {
+  background: var(--hover-overlay);
+}
+
+.range-btn.active {
+  background: var(--warm);
+  color: #fff;
+  border-color: var(--warm);
+}
+
 .cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));

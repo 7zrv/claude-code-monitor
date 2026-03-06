@@ -136,4 +136,30 @@ describe('buildCardData', () => {
     assert.equal(activeCard.value, '0');
     assert.equal(activeCard.type, 'neutral');
   });
+
+  it('uses rangeInfo for Tokens card when provided', () => {
+    const totals = { tokenTotal: 9999, costTotalUsd: 5.0 };
+    const rangeInfo = { label: '최근 1시간', tokenTotal: 100, costUsd: 0.05 };
+    const cards = buildCardData(totals, numberFmt, 0, rangeInfo);
+    const tokenCard = cards.find((c) => c.label === '최근 1시간 Tokens');
+    assert.ok(tokenCard, 'range Tokens card should exist');
+    assert.equal(tokenCard.value, '100');
+  });
+
+  it('uses rangeInfo for Cost card when provided', () => {
+    const totals = { tokenTotal: 9999, costTotalUsd: 5.0 };
+    const rangeInfo = { label: '최근 1시간', tokenTotal: 100, costUsd: 0.05 };
+    const cards = buildCardData(totals, numberFmt, 0, rangeInfo);
+    const costCard = cards.find((c) => c.label === '최근 1시간 Cost');
+    assert.ok(costCard, 'range Cost card should exist');
+    assert.equal(costCard.value, '0.0500');
+  });
+
+  it('uses totals when rangeInfo is null', () => {
+    const totals = { tokenTotal: 500, costTotalUsd: 1.5 };
+    const cards = buildCardData(totals, numberFmt, 0, null);
+    const tokenCard = cards.find((c) => c.label === 'Total Tokens');
+    assert.ok(tokenCard, 'Total Tokens card should exist');
+    assert.equal(tokenCard.value, '500');
+  });
 });
