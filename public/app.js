@@ -1,5 +1,6 @@
 import { recalcWorkflow, splitWorkflow } from './lib/workflow.js';
 import { buildCardData } from './lib/cards.js';
+import { sumByRange, rangeLabel } from './lib/time-range.js';
 import { escapeHtml, statusPill, getActivityStatus, activityDotHtml, countActiveAgents } from './lib/utils.js';
 import { applyIncrementalEvent } from './lib/state.js';
 import { saveFilters, loadFilters, saveToggle, loadToggle } from './lib/persistence.js';
@@ -45,9 +46,13 @@ const chartEls = {
 const workflowToggle = document.getElementById('workflowToggle');
 const workflowCompletedRoot = document.getElementById('workflowCompleted');
 
+const timeRangeBar = document.getElementById('timeRangeBar');
+
 const numberFmt = new Intl.NumberFormat('ko-KR');
 let snapshotState = null;
 let renderQueued = false;
+const RANGE_KEY = 'agent_monitor_range_v1';
+let currentRange = localStorage.getItem(RANGE_KEY) || '1h';
 const storageKey = 'agent_monitor_event_filters_v1';
 const WORKFLOW_TOGGLE_KEY = 'agent_monitor_workflow_toggle_v1';
 let showCompleted = loadToggle(WORKFLOW_TOGGLE_KEY);
@@ -63,9 +68,16 @@ function queueRender() {
   });
 }
 
-function renderCards(totals, agents = []) {
+function renderCards(totals, agents = [], buckets = [], startedAt = '') {
   const activeAgents = countActiveAgents(agents);
-  const cards = buildCardData(totals, numberFmt, activeAgents);
+  const rangeResult = sumByRange(buckets, currentRange, Date.now());
+  let rangeInfo = null;
+  if (rangeResult) {
+    rangeInfo = { label: rangeLabel(currentRange, startedAt), ...rangeResult };
+  } else if (currentRange === 'all') {
+    rangeInfo = { label: rangeLabel('all', startedAt), tokenTotal: totals.tokenTotal || 0, costUsd: totals.costTotalUsd || 0 };
+  }
+  const cards = buildCardData(totals, numberFmt, activeAgents, rangeInfo);
   cardsRoot.innerHTML = cards
     .map(
       (c) =>
@@ -103,7 +115,7 @@ function getFilters() {
 
 function renderSnapshot(snapshot) {
   snapshotState = snapshot;
-  renderCards(snapshot.totals, snapshot.agents || []);
+  renderCards(snapshot.totals, snapshot.agents || [], snapshot.hourlyBuckets || [], snapshot.startedAt || '');
   populateAgentFilter(snapshot.agents || [], agentFilter);
   renderWorkflow(snapshot.workflowProgress || recalcWorkflow(snapshot.agents));
   renderAgents(snapshot.agents || [], agentsBody, agentFilter.value);
@@ -168,6 +180,17 @@ workflowToggle.addEventListener('click', () => {
   queueRender();
 });
 
+timeRangeBar.addEventListener('click', (e) => {
+  const btn = e.target.closest('.range-btn');
+  if (!btn) return;
+  currentRange = btn.dataset.range;
+  localStorage.setItem(RANGE_KEY, currentRange);
+  for (const b of timeRangeBar.querySelectorAll('.range-btn')) {
+    b.classList.toggle('active', b === btn);
+  }
+  queueRender();
+});
+
 agentFilter.addEventListener('change', () => {
   if (snapshotState) {
     renderAgents(snapshotState.agents || [], agentsBody, agentFilter.value);
@@ -187,6 +210,10 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
 
 applyLoadedFilters();
 
+for (const b of timeRangeBar.querySelectorAll('.range-btn')) {
+  b.classList.toggle('active', b.dataset.range === currentRange);
+}
+
 loadSnapshot()
   .then((snapshot) => renderSnapshot(snapshot))
   .catch(console.error);
@@ -202,7 +229,7 @@ connectStream({
 
 setInterval(() => {
   if (!snapshotState || renderQueued) return;
-  renderCards(snapshotState.totals, snapshotState.agents || []);
+  renderCards(snapshotState.totals, snapshotState.agents || [], snapshotState.hourlyBuckets || [], snapshotState.startedAt || '');
   renderWorkflow(snapshotState.workflowProgress || recalcWorkflow(snapshotState.agents));
   renderAgents(snapshotState.agents || [], agentsBody, agentFilter.value);
 }, 1000);
