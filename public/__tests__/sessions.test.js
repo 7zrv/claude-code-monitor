@@ -1,9 +1,9 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { getSessionExportAttrs, renderSessionsList, renderSessionDetail } from '../lib/renders/sessions.js';
+import { getSessionExportAttrs, renderSessionsList, renderSessionDetail, renderSessionDetailMeta } from '../lib/renders/sessions.js';
 
 function makeRoot() {
-  return { innerHTML: '', dataset: {} };
+  return { innerHTML: '', dataset: {}, onclick: null };
 }
 
 const baseSessions = [
@@ -42,6 +42,11 @@ describe('renderSessionsList', () => {
     assert.ok(root.innerHTML.includes('data-status="active"'));
     assert.ok(root.innerHTML.includes('data-status="completed"'));
   });
+
+  it('marks the selected session row', () => {
+    renderSessionsList(baseSessions, root, () => {}, { selectedSessionId: 's2' });
+    assert.ok(root.innerHTML.includes('session-item--selected'));
+  });
 });
 
 describe('renderSessionDetail', () => {
@@ -60,6 +65,32 @@ describe('renderSessionDetail', () => {
   it('renders empty message when no events', () => {
     renderSessionDetail([], root);
     assert.ok(root.innerHTML.includes('이벤트 없음'));
+  });
+});
+
+describe('renderSessionDetailMeta', () => {
+  let root;
+  beforeEach(() => { root = makeRoot(); });
+
+  it('renders empty workspace guidance when no session is selected', () => {
+    renderSessionDetailMeta(null, root);
+    assert.ok(root.innerHTML.includes('세션을 선택하세요'));
+  });
+
+  it('renders summary stats and attention reasons for the selected session', () => {
+    renderSessionDetailMeta({
+      sessionId: 's1',
+      sessionState: 'failed',
+      lastSeen: '2025-01-01T00:00:10Z',
+      tokenTotal: 500,
+      costUsd: 0.05,
+      agentIds: ['a1', 'a2'],
+      needsAttentionRank: 400,
+      needsAttentionReasons: ['failed']
+    }, root);
+    assert.ok(root.innerHTML.includes('Attention Rank'));
+    assert.ok(root.innerHTML.includes('오류 발생'));
+    assert.ok(root.innerHTML.includes('data-status="failed"'));
   });
 });
 

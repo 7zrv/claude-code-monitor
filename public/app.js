@@ -12,7 +12,13 @@ import { getFilteredEvents, renderEventMeta, renderEvents } from './lib/renders/
 import { renderAgents, populateAgentFilter, toggleAgentTreeNode } from './lib/renders/agents.js';
 import { renderAlerts } from './lib/renders/alerts.js';
 import { renderTimeline } from './lib/renders/timeline.js';
-import { renderSessionsList, renderSessionDetail, fetchSessionEvents, getSessionExportAttrs } from './lib/renders/sessions.js';
+import {
+  renderSessionsList,
+  renderSessionDetail,
+  renderSessionDetailMeta,
+  fetchSessionEvents,
+  getSessionExportAttrs
+} from './lib/renders/sessions.js';
 import { isEmptySnapshot, renderEmptyState } from './lib/empty-state.js';
 
 const cardsRoot = document.getElementById('cards');
@@ -36,6 +42,7 @@ const sessionsListRoot = document.getElementById('sessionsList');
 const sessionDetailRoot = document.getElementById('sessionDetail');
 const sessionDetailBack = document.getElementById('sessionDetailBack');
 const sessionDetailTitle = document.getElementById('sessionDetailTitle');
+const sessionDetailMeta = document.getElementById('sessionDetailMeta');
 const sessionDetailExport = document.getElementById('sessionDetailExport');
 const sessionDetailEvents = document.getElementById('sessionDetailEvents');
 
@@ -63,6 +70,9 @@ let currentRange = localStorage.getItem(RANGE_KEY) || '1h';
 const storageKey = 'agent_monitor_event_filters_v1';
 const WORKFLOW_TOGGLE_KEY = 'agent_monitor_workflow_toggle_v1';
 let showCompleted = loadToggle(WORKFLOW_TOGGLE_KEY);
+let selectedSessionId = '';
+const sessionEventsCache = new Map();
+let sessionDetailState = { sessionId: '', loading: false, error: false };
 
 function queueRender() {
   if (renderQueued) return;
@@ -127,6 +137,7 @@ function renderSnapshot(snapshot) {
     if (empty) renderEmptyState(emptyStateEl);
   }
   const sessionRows = annotateSessionsWithState(snapshot.sessions || [], snapshot.agents || []);
+  const selectedSession = resolveSelectedSession(sessionRows);
   renderCards(snapshot.totals, sessionRows, snapshot.hourlyBuckets || [], snapshot.startedAt || '');
   renderNeedsAttention(sessionRows, needsAttentionRoot, openSessionDetail);
   populateAgentFilter(snapshot.agents || [], agentFilter);
@@ -139,12 +150,51 @@ function renderSnapshot(snapshot) {
   renderEvents(filteredEvents, eventsRoot);
   renderEventMeta(allEvents.length, filteredEvents.length, eventMetaEl);
   renderAlerts(snapshot.alerts || [], alertsRoot, alertDrilldownRoot, snapshot);
-  if (!sessionDetailRoot.hidden) {
-    // keep detail view open; don't overwrite
-  } else {
-    renderSessionsList(sessionRows, sessionsListRoot, openSessionDetail);
+  renderSessionsList(sessionRows, sessionsListRoot, openSessionDetail, { selectedSessionId });
+  if (selectedSession && !sessionEventsCache.has(selectedSession.sessionId) && sessionDetailState.sessionId !== selectedSession.sessionId) {
+    openSessionDetail(selectedSession.sessionId);
   }
+  renderSelectedSessionDetail(selectedSession);
   clock.textContent = `마지막 갱신 ${new Date(snapshot.generatedAt).toLocaleTimeString()}`;
+}
+
+function resolveSelectedSession(sessionRows = []) {
+  const hasSelected = selectedSessionId && sessionRows.some((row) => row.sessionId === selectedSessionId);
+  if (hasSelected) {
+    return sessionRows.find((row) => row.sessionId === selectedSessionId) || null;
+  }
+  selectedSessionId = sessionRows[0]?.sessionId || '';
+  return sessionRows[0] || null;
+}
+
+function renderSelectedSessionDetail(session) {
+  sessionDetailTitle.textContent = session?.sessionId || '선택된 세션 없음';
+  renderSessionDetailMeta(session, sessionDetailMeta);
+  const hasSession = Boolean(session?.sessionId);
+  sessionDetailBack.hidden = !hasSession;
+  sessionDetailExport.hidden = !hasSession;
+  if (!hasSession) {
+    sessionDetailExport.removeAttribute('href');
+    sessionDetailExport.removeAttribute('download');
+    sessionDetailEvents.innerHTML = '<p class="sessions-empty">선택된 세션이 없습니다.</p>';
+    return;
+  }
+
+  const attrs = getSessionExportAttrs(session.sessionId);
+  sessionDetailExport.href = attrs.href;
+  sessionDetailExport.download = attrs.download;
+
+  if (sessionDetailState.loading && sessionDetailState.sessionId === session.sessionId) {
+    sessionDetailEvents.innerHTML = '<p>이벤트를 불러오는 중...</p>';
+    return;
+  }
+
+  if (sessionDetailState.error && sessionDetailState.sessionId === session.sessionId) {
+    sessionDetailEvents.innerHTML = '<p>이벤트를 불러올 수 없습니다.</p>';
+    return;
+  }
+
+  renderSessionDetail(sessionEventsCache.get(session.sessionId) || [], sessionDetailEvents);
 }
 
 function doSaveFilters() {
@@ -168,32 +218,27 @@ function refilterEvents() {
 }
 
 function openSessionDetail(sessionId) {
-  sessionsListRoot.hidden = true;
-  sessionDetailRoot.hidden = false;
-  sessionDetailTitle.textContent = sessionId;
-  if (sessionDetailExport) {
-    const attrs = getSessionExportAttrs(sessionId);
-    sessionDetailExport.href = attrs.href;
-    sessionDetailExport.download = attrs.download;
-  }
-  sessionDetailEvents.innerHTML = '<p>로딩 중...</p>';
+  selectedSessionId = sessionId;
+  sessionDetailState = { sessionId, loading: true, error: false };
+  queueRender();
   fetchSessionEvents(sessionId).then((events) => {
-    renderSessionDetail(events, sessionDetailEvents);
+    sessionEventsCache.set(sessionId, events);
+    if (selectedSessionId === sessionId) {
+      sessionDetailState = { sessionId, loading: false, error: false };
+      queueRender();
+    }
   }).catch(() => {
-    sessionDetailEvents.innerHTML = '<p>이벤트를 불러올 수 없습니다.</p>';
+    if (selectedSessionId === sessionId) {
+      sessionDetailState = { sessionId, loading: false, error: true };
+      queueRender();
+    }
   });
 }
 
 sessionDetailBack.addEventListener('click', () => {
-  sessionDetailRoot.hidden = true;
-  sessionsListRoot.hidden = false;
-  if (snapshotState) {
-    renderSessionsList(
-      annotateSessionsWithState(snapshotState.sessions || [], snapshotState.agents || []),
-      sessionsListRoot,
-      openSessionDetail
-    );
-  }
+  selectedSessionId = '';
+  sessionDetailState = { sessionId: '', loading: false, error: false };
+  queueRender();
 });
 
 workflowToggle.addEventListener('click', () => {

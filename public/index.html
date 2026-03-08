@@ -37,6 +37,27 @@
         <div id="needsAttention" class="needs-attention-list"></div>
       </section>
 
+      <section class="panel" id="sessionsPanel">
+        <div class="panel-head">
+          <h2>Sessions Workspace</h2>
+          <small>세션 선택과 상세 진단을 먼저 수행하는 작업면</small>
+        </div>
+        <div class="session-workspace">
+          <div id="sessionsList" class="sessions-list"></div>
+          <div id="sessionDetail" class="session-detail">
+            <div class="session-detail-head">
+              <button id="sessionDetailBack" class="session-back-btn" type="button">&larr; 선택 해제</button>
+              <span id="sessionDetailTitle" class="session-detail-title"></span>
+              <a id="sessionDetailExport" class="session-export-btn" href="#" download title="현재 세션을 로컬 JSON으로 저장">
+                Export JSON
+              </a>
+            </div>
+            <div id="sessionDetailMeta" class="session-detail-meta"></div>
+            <div id="sessionDetailEvents" class="events session-detail-events"></div>
+          </div>
+        </div>
+      </section>
+
       <section class="panel">
         <div class="panel-head">
           <h2>세션 타임라인</h2>
@@ -75,21 +96,6 @@
         </div>
         <div class="workflow" id="workflow"></div>
         <div id="workflowCompleted" class="workflow-completed"></div>
-      </section>
-
-      <section class="panel" id="sessionsPanel">
-        <h2>세션 드릴다운</h2>
-        <div id="sessionsList" class="sessions-list"></div>
-        <div id="sessionDetail" class="session-detail" hidden>
-          <div class="session-detail-head">
-            <button id="sessionDetailBack" class="session-back-btn">&larr; 목록으로</button>
-            <span id="sessionDetailTitle" class="session-detail-title"></span>
-            <a id="sessionDetailExport" class="session-export-btn" href="#" download title="현재 세션을 로컬 JSON으로 저장">
-              Export JSON
-            </a>
-          </div>
-          <div id="sessionDetailEvents" class="events"></div>
-        </div>
       </section>
 
       <section class="panel">
