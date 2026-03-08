@@ -1,6 +1,13 @@
-import { describe, it } from 'node:test';
+import { beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { alertItemHtml, getAlertContext, drilldownHtml, resetAlertSelection } from '../lib/renders/alerts.js';
+import {
+  alertItemHtml,
+  getAlertContext,
+  drilldownHtml,
+  renderAlerts,
+  resolveAlertSessionId,
+  resetAlertSelection
+} from '../lib/renders/alerts.js';
 
 function makeAlert(overrides = {}) {
   return {
@@ -77,6 +84,31 @@ describe('alertItemHtml', () => {
     assert.ok(!html.includes('"><b>'));
     assert.ok(html.includes('&lt;script&gt;'));
   });
+
+  it('includes linked session id when available', () => {
+    const html = alertItemHtml(makeAlert(), false, 'sess-1');
+    assert.ok(html.includes('data-session-id="sess-1"'));
+  });
+});
+
+describe('resolveAlertSessionId', () => {
+  it('prefers agent state session id', () => {
+    const alert = makeAlert();
+    const snapshot = makeSnapshot({
+      agents: [{ agentId: 'agent-abc', sessionId: 'sess-agent' }],
+      recent: [{ agentId: 'agent-abc', sessionId: 'sess-event' }]
+    });
+    assert.equal(resolveAlertSessionId(alert, snapshot), 'sess-agent');
+  });
+
+  it('falls back to recent event session id', () => {
+    const alert = makeAlert();
+    const snapshot = makeSnapshot({
+      agents: [],
+      recent: [{ agentId: 'agent-abc', sessionId: 'sess-event' }]
+    });
+    assert.equal(resolveAlertSessionId(alert, snapshot), 'sess-event');
+  });
 });
 
 // ── getAlertContext ──
@@ -121,7 +153,15 @@ describe('getAlertContext', () => {
 
   it('returns empty context when snapshot is null', () => {
     const ctx = getAlertContext('agent-abc', null);
-    assert.deepEqual(ctx, { recentEvents: [], agentState: null });
+    assert.deepEqual(ctx, { recentEvents: [], agentState: null, linkedSessionId: '' });
+  });
+
+  it('includes linked session id in context when available', () => {
+    const snapshot = makeSnapshot({
+      agents: [{ agentId: 'agent-abc', sessionId: 'sess-1' }]
+    });
+    const ctx = getAlertContext('agent-abc', snapshot);
+    assert.equal(ctx.linkedSessionId, 'sess-1');
   });
 });
 
@@ -180,5 +220,103 @@ describe('drilldownHtml', () => {
   it('shows empty state message when no context events', () => {
     const html = drilldownHtml(makeAlert(), { recentEvents: [], agentState: null });
     assert.ok(html.includes('data-drilldown-close'));
+  });
+
+  it('includes linked session section and open button when session exists', () => {
+    const html = drilldownHtml(makeAlert(), { recentEvents: [], agentState: null, linkedSessionId: 'sess-1' });
+    assert.ok(html.includes('Linked Session'));
+    assert.ok(html.includes('data-session-open="sess-1"'));
+  });
+});
+
+describe('renderAlerts', () => {
+  beforeEach(() => {
+    resetAlertSelection();
+  });
+
+  function makeAlertsRoot() {
+    return {
+      innerHTML: '',
+      onclick: null,
+      querySelectorAll() {
+        return [];
+      }
+    };
+  }
+
+  function makeDrilldownRoot() {
+    return {
+      innerHTML: '',
+      hidden: true,
+      onclick: null,
+      setAttribute(name) {
+        if (name === 'hidden') this.hidden = true;
+      },
+      removeAttribute(name) {
+        if (name === 'hidden') this.hidden = false;
+      }
+    };
+  }
+
+  it('opens linked session on primary alert click when a session is resolvable', () => {
+    const alertsRoot = makeAlertsRoot();
+    const drilldownRoot = makeDrilldownRoot();
+    const snapshot = makeSnapshot({
+      agents: [{ agentId: 'agent-abc', sessionId: 'sess-1' }]
+    });
+    let openedSessionId = '';
+
+    renderAlerts([makeAlert()], alertsRoot, drilldownRoot, snapshot, {
+      onOpenSession(sessionId) {
+        openedSessionId = sessionId;
+      }
+    });
+
+    alertsRoot.onclick({
+      target: {
+        closest(selector) {
+          if (selector === '[data-alert-id]') {
+            return {
+              dataset: { alertId: 'alert-1', sessionId: 'sess-1' },
+              classList: { add() {}, remove() {} }
+            };
+          }
+          return null;
+        }
+      }
+    });
+
+    assert.equal(openedSessionId, 'sess-1');
+    assert.equal(drilldownRoot.hidden, false);
+    assert.ok(drilldownRoot.innerHTML.includes('sess-1'));
+  });
+
+  it('keeps drilldown-only behavior when no linked session exists', () => {
+    const alertsRoot = makeAlertsRoot();
+    const drilldownRoot = makeDrilldownRoot();
+    let openedSessionId = '';
+
+    renderAlerts([makeAlert()], alertsRoot, drilldownRoot, makeSnapshot(), {
+      onOpenSession(sessionId) {
+        openedSessionId = sessionId;
+      }
+    });
+
+    alertsRoot.onclick({
+      target: {
+        closest(selector) {
+          if (selector === '[data-alert-id]') {
+            return {
+              dataset: { alertId: 'alert-1' },
+              classList: { add() {}, remove() {} }
+            };
+          }
+          return null;
+        }
+      }
+    });
+
+    assert.equal(openedSessionId, '');
+    assert.equal(drilldownRoot.hidden, false);
   });
 });

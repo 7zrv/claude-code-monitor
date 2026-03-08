@@ -149,7 +149,7 @@ function renderSnapshot(snapshot) {
   const filteredEvents = getFilteredEvents(allEvents, getFilters());
   renderEvents(filteredEvents, eventsRoot);
   renderEventMeta(allEvents.length, filteredEvents.length, eventMetaEl);
-  renderAlerts(snapshot.alerts || [], alertsRoot, alertDrilldownRoot, snapshot);
+  renderAlerts(snapshot.alerts || [], alertsRoot, alertDrilldownRoot, snapshot, { onOpenSession: openSessionDetail });
   renderSessionsList(sessionRows, sessionsListRoot, openSessionDetail, { selectedSessionId });
   if (selectedSession && !sessionEventsCache.has(selectedSession.sessionId) && sessionDetailState.sessionId !== selectedSession.sessionId) {
     openSessionDetail(selectedSession.sessionId);

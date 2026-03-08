@@ -7,10 +7,18 @@ export function resetAlertSelection() {
   _selectedAlertId = null;
 }
 
-export function alertItemHtml(alert, isSelected = false) {
+export function resolveAlertSessionId(alert = {}, snapshot) {
+  if (!snapshot || !alert.agentId) return '';
+  const agentState = (snapshot.agents || []).find((agent) => agent.agentId === alert.agentId);
+  if (agentState?.sessionId) return agentState.sessionId;
+  const recentEvent = (snapshot.recent || []).find((event) => event.agentId === alert.agentId && event.sessionId);
+  return recentEvent?.sessionId || '';
+}
+
+export function alertItemHtml(alert, isSelected = false, sessionId = '') {
   const cls = isSelected ? 'event alert-item alert-item--selected' : 'event alert-item';
   return `
-      <div class="${cls}" data-alert-id="${escapeHtml(alert.id)}">
+      <div class="${cls}" data-alert-id="${escapeHtml(alert.id)}"${sessionId ? ` data-session-id="${escapeHtml(sessionId)}"` : ''}>
         <span>${new Date(alert.createdAt).toLocaleTimeString()}</span>
         <span title="${escapeHtml(alert.agentId)}"><strong>${escapeHtml(displayNameFor(alert.agentId))}</strong></span>
         <span>${escapeHtml(alert.event)}</span>
@@ -20,16 +28,17 @@ export function alertItemHtml(alert, isSelected = false) {
 }
 
 export function getAlertContext(agentId, snapshot) {
-  if (!snapshot) return { recentEvents: [], agentState: null };
+  if (!snapshot) return { recentEvents: [], agentState: null, linkedSessionId: '' };
   const recentEvents = (snapshot.recent || [])
     .filter((e) => e.agentId === agentId)
     .slice(0, 5);
   const agentState = (snapshot.agents || []).find((a) => a.agentId === agentId) || null;
-  return { recentEvents, agentState };
+  const linkedSessionId = agentState?.sessionId || recentEvents.find((event) => event.sessionId)?.sessionId || '';
+  return { recentEvents, agentState, linkedSessionId };
 }
 
 export function drilldownHtml(alert, context) {
-  const { recentEvents, agentState } = context;
+  const { recentEvents, agentState, linkedSessionId } = context;
 
   const agentSection = agentState
     ? `<div class="drilldown-section">
@@ -38,6 +47,16 @@ export function drilldownHtml(alert, context) {
           <span>Model: <strong>${escapeHtml(agentState.model || '-')}</strong></span>
           <span>Tokens: <strong>${agentState.tokenTotal ?? 0}</strong></span>
           <span>Events: ${agentState.total ?? 0} (ok: ${agentState.ok ?? 0}, warn: ${agentState.warning ?? 0}, err: ${agentState.error ?? 0})</span>
+        </div>
+      </div>`
+    : '';
+
+  const sessionSection = linkedSessionId
+    ? `<div class="drilldown-section">
+        <h3>Linked Session</h3>
+        <div class="drilldown-session-link">
+          <strong>${escapeHtml(linkedSessionId)}</strong>
+          <button class="drilldown-session-open" data-session-open="${escapeHtml(linkedSessionId)}">세션 열기</button>
         </div>
       </div>`
     : '';
@@ -67,6 +86,7 @@ export function drilldownHtml(alert, context) {
       <h3>Message</h3>
       <p>${escapeHtml(alert.message)}</p>
     </div>
+    ${sessionSection}
     ${agentSection}
     <div class="drilldown-section">
       <h3>Recent Events (${escapeHtml(alert.agentId)})</h3>
@@ -74,7 +94,8 @@ export function drilldownHtml(alert, context) {
     </div>`;
 }
 
-export function renderAlerts(alerts, el, drilldownEl, snapshot) {
+export function renderAlerts(alerts, el, drilldownEl, snapshot, options = {}) {
+  const { onOpenSession } = options;
   if (!alerts || !alerts.length) {
     el.innerHTML = '<div class="event">No active alerts</div>';
     if (drilldownEl) drilldownEl.setAttribute('hidden', '');
@@ -88,7 +109,9 @@ export function renderAlerts(alerts, el, drilldownEl, snapshot) {
     if (drilldownEl) drilldownEl.setAttribute('hidden', '');
   }
 
-  el.innerHTML = alerts.map((a) => alertItemHtml(a, a.id === _selectedAlertId)).join('');
+  el.innerHTML = alerts
+    .map((alert) => alertItemHtml(alert, alert.id === _selectedAlertId, resolveAlertSessionId(alert, snapshot)))
+    .join('');
 
   // Update drilldown if open
   if (_selectedAlertId && drilldownEl) {
@@ -126,10 +149,20 @@ export function renderAlerts(alerts, el, drilldownEl, snapshot) {
       drilldownEl.innerHTML = drilldownHtml(alert, ctx);
       drilldownEl.removeAttribute('hidden');
     }
+
+    const linkedSessionId = item.dataset.sessionId || resolveAlertSessionId(alert, snapshot);
+    if (linkedSessionId && typeof onOpenSession === 'function') {
+      onOpenSession(linkedSessionId);
+    }
   };
 
   if (drilldownEl) {
     drilldownEl.onclick = (event) => {
+      const openBtn = event.target.closest('[data-session-open]');
+      if (openBtn && typeof onOpenSession === 'function') {
+        onOpenSession(openBtn.dataset.sessionOpen);
+        return;
+      }
       if (event.target.closest('[data-drilldown-close]')) {
         _selectedAlertId = null;
         drilldownEl.setAttribute('hidden', '');
