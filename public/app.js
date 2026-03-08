@@ -5,6 +5,7 @@ import { escapeHtml, statusPill, getActivityStatus, activityDotHtml, countActive
 import { applyIncrementalEvent } from './lib/state.js';
 import { saveFilters, loadFilters, saveToggle, loadToggle } from './lib/persistence.js';
 import { connectStream, loadSnapshot } from './lib/connection.js';
+import { annotateSessionsWithState } from './lib/session-status.js';
 import { renderGraphs } from './lib/renders/charts.js';
 import { getFilteredEvents, renderEventMeta, renderEvents } from './lib/renders/events.js';
 import { renderAgents, populateAgentFilter } from './lib/renders/agents.js';
@@ -20,6 +21,7 @@ const alertsRoot = document.getElementById('alerts');
 const alertDrilldownRoot = document.getElementById('alertDrilldown');
 const clock = document.getElementById('clock');
 const connectionEl = document.getElementById('connection');
+const connectionMetaEl = document.getElementById('connectionMeta');
 const agentFilter = document.getElementById('agentFilter');
 const eventStatusFilter = document.getElementById('eventStatusFilter');
 const eventLimit = document.getElementById('eventLimit');
@@ -115,6 +117,7 @@ function getFilters() {
 
 function renderSnapshot(snapshot) {
   snapshotState = snapshot;
+  const sessionRows = annotateSessionsWithState(snapshot.sessions || [], snapshot.agents || []);
   renderCards(snapshot.totals, snapshot.agents || [], snapshot.hourlyBuckets || [], snapshot.startedAt || '');
   populateAgentFilter(snapshot.agents || [], agentFilter);
   renderWorkflow(snapshot.workflowProgress || recalcWorkflow(snapshot.agents));
@@ -129,9 +132,9 @@ function renderSnapshot(snapshot) {
   if (!sessionDetailRoot.hidden) {
     // keep detail view open; don't overwrite
   } else {
-    renderSessionsList(snapshot.sessions || [], sessionsListRoot, openSessionDetail);
+    renderSessionsList(sessionRows, sessionsListRoot, openSessionDetail);
   }
-  clock.textContent = `Last refresh: ${new Date(snapshot.generatedAt).toLocaleTimeString()}`;
+  clock.textContent = `마지막 갱신 ${new Date(snapshot.generatedAt).toLocaleTimeString()}`;
 }
 
 function doSaveFilters() {
@@ -170,7 +173,11 @@ sessionDetailBack.addEventListener('click', () => {
   sessionDetailRoot.hidden = true;
   sessionsListRoot.hidden = false;
   if (snapshotState) {
-    renderSessionsList(snapshotState.sessions || [], sessionsListRoot, openSessionDetail);
+    renderSessionsList(
+      annotateSessionsWithState(snapshotState.sessions || [], snapshotState.agents || []),
+      sessionsListRoot,
+      openSessionDetail
+    );
   }
 });
 
@@ -220,6 +227,7 @@ loadSnapshot()
 
 connectStream({
   connectionEl,
+  connectionMetaEl,
   onSnapshot(snapshot) { snapshotState = snapshot; queueRender(); },
   onEvent(evt) {
     if (snapshotState) { applyIncrementalEvent(snapshotState, evt); queueRender(); }

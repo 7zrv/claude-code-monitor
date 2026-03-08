@@ -85,7 +85,12 @@ h1 {
   margin-top: 6px;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.connection-meta {
+  opacity: 0.72;
 }
 
 main {
@@ -542,6 +547,7 @@ tbody tr:hover td {
   padding: 3px 8px;
   border-radius: 999px;
   border: 1px solid var(--border);
+  white-space: nowrap;
 }
 
 .status-pill[data-status='warning'] {
@@ -569,10 +575,29 @@ tbody tr:hover td {
   color: var(--color-ok);
 }
 
+.status-pill[data-status='active'] {
+  border-width: 2px;
+  border-color: var(--color-ok);
+  color: var(--color-ok);
+}
+
 .status-pill[data-status='at-risk'] {
   border-color: var(--color-warning);
   color: var(--color-warning);
   font-weight: 600;
+}
+
+.status-pill[data-status='stuck'] {
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+  font-weight: 600;
+}
+
+.status-pill[data-status='failed'] {
+  border-width: 2px;
+  border-color: var(--color-error);
+  color: var(--color-error);
+  font-weight: 700;
 }
 
 .status-pill[data-status='idle'] {
@@ -910,8 +935,8 @@ tr.tree-last .tree-branch::before {
 
 .session-item {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 6px;
   padding: 8px 12px;
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
@@ -922,6 +947,13 @@ tr.tree-last .tree-branch::before {
 
 .session-item:hover {
   box-shadow: 0 2px 8px var(--shadow-hover-subtle);
+}
+
+.session-item-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .session-item-id {

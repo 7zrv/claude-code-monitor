@@ -1,4 +1,4 @@
-import { escapeHtml, statusPill } from '../utils.js';
+import { escapeHtml, relativeTime, statusPill } from '../utils.js';
 
 export function renderSessionsList(sessions, root, onSelect) {
   if (!sessions || sessions.length === 0) {
@@ -9,12 +9,15 @@ export function renderSessionsList(sessions, root, onSelect) {
   root.innerHTML = sessions
     .map(
       (s) => `<div class="session-item" data-session-id="${escapeHtml(s.sessionId)}">
-        <div class="session-item-id">${escapeHtml(s.sessionId)}</div>
+        <div class="session-item-main">
+          <div class="session-item-id">${escapeHtml(s.sessionId)}</div>
+          ${statusPill(s.sessionState || 'idle')}
+        </div>
         <div class="session-item-meta">
           <span>tokens: ${s.tokenTotal}</span>
           <span>cost: $${s.costUsd.toFixed(4)}</span>
           <span>agents: ${s.agentIds.length}</span>
-          <span>${new Date(s.lastSeen).toLocaleTimeString()}</span>
+          <span>last: ${relativeTime(s.lastSeen)}</span>
         </div>
       </div>`
     )

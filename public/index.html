@@ -4,16 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
-    <title>Claude Pulse</title>
+    <title>Claude Code Monitor</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <header class="header">
-      <h1>Claude Pulse</h1>
-      <p>Claude Code 실시간 이벤트/상태 모니터링</p>
+      <h1>Claude Code Monitor</h1>
+      <p>Claude Code 세션 실시간 이벤트와 상태를 추적하는 운영 대시보드</p>
       <div class="header-meta">
         <small id="clock"></small>
         <span id="connection" class="status-pill" data-status="reconnecting">reconnecting</span>
+        <small id="connectionMeta" class="connection-meta">스트림 연결 중...</small>
       </div>
     </header>
 

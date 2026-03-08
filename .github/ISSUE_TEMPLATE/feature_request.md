@@ -1,6 +1,6 @@
 ---
 name: Feature Request
-about: Suggest an idea for Codex Pulse
+about: Suggest an idea for Claude Code Monitor
 title: "[Feature] "
 labels: enhancement, status: ready
 assignees: ''
