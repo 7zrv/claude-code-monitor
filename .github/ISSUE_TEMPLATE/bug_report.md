@@ -24,7 +24,7 @@ assignees: ''
 - OS:
 - Node.js version:
 - Rust version:
-- Codex Pulse version:
+- Claude Code Monitor version:
 
 ## Additional Context
 <!-- 스크린샷, 로그 등 추가 정보 -->

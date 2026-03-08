@@ -4,7 +4,7 @@
 [![License](https://img.shields.io/github/license/7zrv/claude-code-monitor)](https://github.com/7zrv/claude-code-monitor/blob/main/LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-stable-orange?logo=rust)](https://www.rust-lang.org/)
 
-Claude 에이전트의 실시간 모니터링 대시보드. Rust 백엔드 + Electron 데스크톱 앱 구조.
+Claude Code 세션의 실시간 모니터링 대시보드. Rust 백엔드 + Electron 데스크톱 앱 구조.
 
 ## 핵심 기능
 
@@ -35,6 +35,7 @@ cargo run --release
 | `CLAUDE_BACKFILL_LINES` | `25` | 초기 로드 시 읽을 라인 수 |
 | `PUBLIC_DIR` | `public` | 정적 파일 디렉토리 경로 |
 | `HTTP_READ_TIMEOUT_SEC` | `5` | HTTP 읽기 타임아웃 (초) |
+| `DESKTOP_SERVER_READY_TIMEOUT_MS` | `30000` | Electron이 Rust 서버 준비를 기다리는 최대 시간 (ms) |
 
 ## 데스크톱 앱
 
@@ -54,4 +55,4 @@ cargo test              # Rust 테스트
 npm run check           # JS 구문 검사
 ```
 
-연결 상태는 헤더 배지에서 `connected / reconnecting / offline`으로 확인할 수 있습니다.
+연결 상태는 헤더에서 `connected / reconnecting / offline`과 마지막 성공 시각으로 확인할 수 있습니다.

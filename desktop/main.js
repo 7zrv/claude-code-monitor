@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 const ROOT = join(import.meta.dirname, '..');
 const SERVER_PORT = process.env.PORT || '5050';
 const SERVER_URL = `http://127.0.0.1:${SERVER_PORT}`;
+const SERVER_READY_TIMEOUT_MS = Number(process.env.DESKTOP_SERVER_READY_TIMEOUT_MS || '30000');
 
 let serverProc;
 let mainWindow;
@@ -24,7 +25,7 @@ function spawnProcess(cmd, args, extraEnv = {}) {
   return child;
 }
 
-async function waitForServer(timeoutMs = 10000) {
+async function waitForServer(timeoutMs = SERVER_READY_TIMEOUT_MS) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
@@ -44,7 +45,7 @@ function createWindow() {
     height: 840,
     minWidth: 980,
     minHeight: 700,
-    title: 'Claude Pulse',
+    title: 'Claude Code Monitor',
     autoHideMenuBar: true,
     webPreferences: {
       contextIsolation: true,
@@ -87,6 +88,9 @@ app.whenReady().then(async () => {
     createWindow();
   } catch (err) {
     console.error(`[desktop] ${err.message}`);
+    console.error(
+      `[desktop] Increase DESKTOP_SERVER_READY_TIMEOUT_MS or prebuild with "cargo build --release" when the first release build is slow.`
+    );
     app.quit();
   }
 

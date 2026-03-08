@@ -7,8 +7,8 @@ function makeRoot() {
 }
 
 const baseSessions = [
-  { sessionId: 's1', lastSeen: '2025-01-01T00:00:10Z', tokenTotal: 500, costUsd: 0.05, agentIds: ['a1'] },
-  { sessionId: 's2', lastSeen: '2025-01-01T00:00:20Z', tokenTotal: 1000, costUsd: 0.10, agentIds: ['a1', 'a2'] }
+  { sessionId: 's1', lastSeen: '2025-01-01T00:00:10Z', tokenTotal: 500, costUsd: 0.05, agentIds: ['a1'], sessionState: 'active' },
+  { sessionId: 's2', lastSeen: '2025-01-01T00:00:20Z', tokenTotal: 1000, costUsd: 0.10, agentIds: ['a1', 'a2'], sessionState: 'completed' }
 ];
 
 describe('renderSessionsList', () => {
@@ -30,6 +30,12 @@ describe('renderSessionsList', () => {
     renderSessionsList(baseSessions, root, () => {});
     assert.ok(root.innerHTML.includes('500'));
     assert.ok(root.innerHTML.includes('0.05'));
+  });
+
+  it('includes session state badge', () => {
+    renderSessionsList(baseSessions, root, () => {});
+    assert.ok(root.innerHTML.includes('data-status="active"'));
+    assert.ok(root.innerHTML.includes('data-status="completed"'));
   });
 });
 
