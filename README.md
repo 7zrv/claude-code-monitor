@@ -53,6 +53,7 @@ cargo fmt --check       # 포맷 검사
 cargo clippy -- -D warnings  # 린트
 cargo test              # Rust 테스트
 npm run check           # JS 구문 검사
+npm run perf:gate       # 대량 이벤트 렌더 회귀 게이트
 ```
 
 연결 상태는 헤더에서 `connected / reconnecting / offline`과 마지막 성공 시각으로 확인할 수 있습니다.
