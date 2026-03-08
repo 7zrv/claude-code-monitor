@@ -102,6 +102,14 @@ pub struct SessionRow {
     pub agent_ids: Vec<String>,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionExport {
+    pub exported_at: String,
+    pub summary: SessionRow,
+    pub events: Vec<Event>,
+}
+
 #[derive(Clone, Serialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct HourBucket {

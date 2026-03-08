@@ -11,7 +11,7 @@ import { getFilteredEvents, renderEventMeta, renderEvents } from './lib/renders/
 import { renderAgents, populateAgentFilter } from './lib/renders/agents.js';
 import { renderAlerts } from './lib/renders/alerts.js';
 import { renderTimeline } from './lib/renders/timeline.js';
-import { renderSessionsList, renderSessionDetail, fetchSessionEvents } from './lib/renders/sessions.js';
+import { renderSessionsList, renderSessionDetail, fetchSessionEvents, getSessionExportAttrs } from './lib/renders/sessions.js';
 
 const cardsRoot = document.getElementById('cards');
 const workflowRoot = document.getElementById('workflow');
@@ -34,6 +34,7 @@ const sessionsListRoot = document.getElementById('sessionsList');
 const sessionDetailRoot = document.getElementById('sessionDetail');
 const sessionDetailBack = document.getElementById('sessionDetailBack');
 const sessionDetailTitle = document.getElementById('sessionDetailTitle');
+const sessionDetailExport = document.getElementById('sessionDetailExport');
 const sessionDetailEvents = document.getElementById('sessionDetailEvents');
 
 const chartEls = {
@@ -160,6 +161,11 @@ function openSessionDetail(sessionId) {
   sessionsListRoot.hidden = true;
   sessionDetailRoot.hidden = false;
   sessionDetailTitle.textContent = sessionId;
+  if (sessionDetailExport) {
+    const attrs = getSessionExportAttrs(sessionId);
+    sessionDetailExport.href = attrs.href;
+    sessionDetailExport.download = attrs.download;
+  }
   sessionDetailEvents.innerHTML = '<p>로딩 중...</p>';
   fetchSessionEvents(sessionId).then((events) => {
     renderSessionDetail(events, sessionDetailEvents);

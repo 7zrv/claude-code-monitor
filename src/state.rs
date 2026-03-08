@@ -4,8 +4,8 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 use crate::types::{
-    AgentRow, AlertRow, App, Event, HourBucket, SessionRow, Snapshot, SourceRow, State,
-    ToolCallStat, WorkflowRow,
+    AgentRow, AlertRow, App, Event, HourBucket, SessionExport, SessionRow, Snapshot, SourceRow,
+    State, ToolCallStat, WorkflowRow,
 };
 use crate::utils::now_iso;
 
@@ -64,6 +64,15 @@ pub fn get_session_events(state: &State, session_id: &str) -> Vec<Event> {
         .get(session_id)
         .cloned()
         .unwrap_or_default()
+}
+
+pub fn get_session_export(state: &State, session_id: &str) -> Option<SessionExport> {
+    let summary = state.by_session.get(session_id)?.clone();
+    Some(SessionExport {
+        exported_at: now_iso(),
+        summary,
+        events: get_session_events(state, session_id),
+    })
 }
 
 pub fn build_snapshot(state: &State) -> Snapshot {

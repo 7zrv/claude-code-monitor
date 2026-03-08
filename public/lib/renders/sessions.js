@@ -50,6 +50,21 @@ export function renderSessionDetail(events, root) {
     .join('');
 }
 
+function sanitizeExportSegment(value) {
+  const safe = String(value ?? '')
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return safe || 'detail';
+}
+
+export function getSessionExportAttrs(sessionId) {
+  return {
+    href: `/api/sessions/${encodeURIComponent(sessionId)}/export`,
+    download: `session-${sanitizeExportSegment(sessionId)}.json`
+  };
+}
+
 export async function fetchSessionEvents(sessionId) {
   const resp = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/events`);
   if (!resp.ok) return [];

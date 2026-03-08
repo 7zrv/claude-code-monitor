@@ -977,9 +977,18 @@ tr.tree-last .tree-branch::before {
   align-items: center;
   gap: 12px;
   margin-bottom: 8px;
+  flex-wrap: wrap;
 }
 
-.session-back-btn {
+.session-detail-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-back-btn,
+.session-export-btn {
   background: none;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -987,8 +996,14 @@ tr.tree-last .tree-branch::before {
   cursor: pointer;
   color: var(--warm-text);
   font-size: 13px;
+  text-decoration: none;
 }
 
-.session-back-btn:hover {
+.session-export-btn {
+  margin-left: auto;
+}
+
+.session-back-btn:hover,
+.session-export-btn:hover {
   background: var(--hover-overlay);
 }
