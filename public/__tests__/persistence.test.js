@@ -1,6 +1,7 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { saveFilters, loadFilters, saveToggle, loadToggle } from '../lib/persistence.js';
+import { DEFAULT_ALERT_RULES } from '../lib/alert-rules.js';
+import { saveFilters, loadFilters, saveToggle, loadToggle, saveAlertRules, loadAlertRules, resetAlertRules } from '../lib/persistence.js';
 
 // minimal localStorage mock
 function createStorageMock() {
@@ -81,5 +82,35 @@ describe('loadToggle', () => {
     const storage = createStorageMock();
     storage.setItem('toggle_key', 'maybe');
     assert.equal(loadToggle('toggle_key', storage), false);
+  });
+});
+
+describe('alert rule persistence', () => {
+  it('stores sanitized alert rules', () => {
+    const storage = createStorageMock();
+    saveAlertRules('alert_rules', { costUsdThreshold: '0.75', tokenTotalThreshold: '25000', warningCountThreshold: '2' }, storage);
+    assert.deepEqual(JSON.parse(storage.getItem('alert_rules')), {
+      costUsdThreshold: 0.75,
+      tokenTotalThreshold: 25000,
+      warningCountThreshold: 2
+    });
+  });
+
+  it('loads defaults when storage is empty', () => {
+    const storage = createStorageMock();
+    assert.deepEqual(loadAlertRules('alert_rules', storage), { ...DEFAULT_ALERT_RULES });
+  });
+
+  it('falls back to defaults for invalid stored values', () => {
+    const storage = createStorageMock();
+    storage.setItem('alert_rules', JSON.stringify({ costUsdThreshold: -1, tokenTotalThreshold: 'bad', warningCountThreshold: 0 }));
+    assert.deepEqual(loadAlertRules('alert_rules', storage), { ...DEFAULT_ALERT_RULES });
+  });
+
+  it('removes stored alert rules on reset', () => {
+    const storage = createStorageMock();
+    storage.setItem('alert_rules', JSON.stringify(DEFAULT_ALERT_RULES));
+    resetAlertRules('alert_rules', storage);
+    assert.equal(storage.getItem('alert_rules'), null);
   });
 });

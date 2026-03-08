@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { DEFAULT_ALERT_RULES } from '../lib/alert-rules.js';
 import { annotateSessionsWithState, deriveRiskSignals, deriveSessionState, toWorkflowStatus } from '../lib/session-status.js';
 
 describe('deriveSessionState', () => {
@@ -94,6 +95,28 @@ describe('deriveRiskSignals', () => {
     assert.equal(signals.isCostSpike, true);
   });
 
+  it('uses custom warning thresholds without changing stuck state semantics', () => {
+    const signals = deriveRiskSignals(
+      { sessionState: 'stuck', warning: 1, costUsd: 0.01, tokenTotal: 100 },
+      Date.now(),
+      { ...DEFAULT_ALERT_RULES, warningCountThreshold: 2 }
+    );
+    assert.equal(signals.needsAttention, true);
+    assert.deepEqual(signals.needsAttentionReasons, ['stuck']);
+    assert.equal(signals.needsAttentionRank, 300);
+  });
+
+  it('uses custom cost thresholds when evaluating cost spikes', () => {
+    const signals = deriveRiskSignals(
+      { sessionState: 'active', warning: 0, costUsd: 0.4, tokenTotal: 18_000 },
+      Date.now(),
+      { costUsdThreshold: 0.3, tokenTotalThreshold: 25_000, warningCountThreshold: 1 }
+    );
+    assert.equal(signals.needsAttention, true);
+    assert.deepEqual(signals.needsAttentionReasons, ['cost_spike']);
+    assert.equal(signals.isCostSpike, true);
+  });
+
   it('falls back to low-risk values when data is sparse', () => {
     const signals = deriveRiskSignals({ sessionState: 'idle', warning: 0, costUsd: 0, tokenTotal: 0 });
     assert.equal(signals.needsAttention, false);
@@ -143,5 +166,22 @@ describe('annotateSessionsWithState', () => {
     assert.equal(rows[0].isCostSpike, true);
     assert.equal(rows[0].needsAttentionRank, 100);
     assert.deepEqual(rows[0].needsAttentionReasons, ['cost_spike']);
+  });
+
+  it('threads custom rules through annotateSessionsWithState', () => {
+    const sessions = [{ sessionId: 'sess-1', lastSeen: '2026-01-01T00:00:00Z', tokenTotal: 19_000, costUsd: 0.35, agentIds: ['a1'] }];
+    const agents = [{ agentId: 'a1', sessionId: 'sess-1', total: 2, warning: 1, error: 0 }];
+    const rows = annotateSessionsWithState(
+      sessions,
+      agents,
+      new Date('2026-01-01T00:00:10Z').getTime(),
+      { costUsdThreshold: 0.3, tokenTotalThreshold: 30_000, warningCountThreshold: 2 }
+    );
+
+    assert.equal(rows[0].sessionState, 'stuck');
+    assert.equal(rows[0].needsAttention, true);
+    assert.equal(rows[0].isCostSpike, true);
+    assert.deepEqual(rows[0].needsAttentionReasons, ['stuck', 'cost_spike']);
+    assert.equal(rows[0].needsAttentionRank, 400);
   });
 });

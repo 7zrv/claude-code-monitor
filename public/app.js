@@ -3,10 +3,12 @@ import { buildCardData } from './lib/cards.js';
 import { sumByRange, rangeLabel } from './lib/time-range.js';
 import { escapeHtml, statusPill, getActivityStatus, activityDotHtml } from './lib/utils.js';
 import { applyIncrementalEvent } from './lib/state.js';
-import { saveFilters, loadFilters, saveToggle, loadToggle } from './lib/persistence.js';
+import { ALERT_RULES_STORAGE_KEY } from './lib/alert-rules.js';
+import { saveFilters, loadFilters, saveToggle, loadToggle, loadAlertRules, saveAlertRules, resetAlertRules } from './lib/persistence.js';
 import { connectStream, loadSnapshot } from './lib/connection.js';
 import { annotateSessionsWithState } from './lib/session-status.js';
 import { renderNeedsAttention } from './lib/needs-attention.js';
+import { renderAlertRules } from './lib/renders/alert-rules.js';
 import { renderGraphs } from './lib/renders/charts.js';
 import { getFilteredEvents, renderEventMeta, renderEvents } from './lib/renders/events.js';
 import { renderAgents, populateAgentFilter, toggleAgentTreeNode } from './lib/renders/agents.js';
@@ -28,6 +30,7 @@ const agentsBody = document.getElementById('agentsBody');
 const eventsRoot = document.getElementById('events');
 const alertsRoot = document.getElementById('alerts');
 const alertDrilldownRoot = document.getElementById('alertDrilldown');
+const alertRulesRoot = document.getElementById('alertRules');
 const clock = document.getElementById('clock');
 const connectionEl = document.getElementById('connection');
 const connectionMetaEl = document.getElementById('connectionMeta');
@@ -78,6 +81,7 @@ let showCompleted = loadToggle(WORKFLOW_TOGGLE_KEY);
 let selectedSessionId = '';
 const sessionEventsCache = new Map();
 let sessionDetailState = { sessionId: '', loading: false, error: false };
+let alertRules = loadAlertRules(ALERT_RULES_STORAGE_KEY);
 
 function queueRender() {
   if (renderQueued) return;
@@ -172,7 +176,7 @@ function renderSnapshot(snapshot) {
     emptyStateEl.hidden = !empty;
     if (empty) renderEmptyState(emptyStateEl);
   }
-  const sessionRows = annotateSessionsWithState(snapshot.sessions || [], snapshot.agents || []);
+  const sessionRows = annotateSessionsWithState(snapshot.sessions || [], snapshot.agents || [], Date.now(), alertRules);
   const visibleSessionRows = getVisibleSessionRows(sessionRows);
   const selectedSession = resolveSelectedSession(sessionRows, visibleSessionRows);
   renderCards(snapshot.totals, sessionRows, snapshot.hourlyBuckets || [], snapshot.startedAt || '');
@@ -261,6 +265,23 @@ function applyLoadedSessionFilters() {
   if (typeof filters.query === 'string') sessionSearch.value = filters.query;
 }
 
+function renderAlertRulesPanel() {
+  if (!alertRulesRoot) return;
+  renderAlertRules(alertRulesRoot, alertRules, {
+    onChange(nextRules) {
+      alertRules = nextRules;
+      saveAlertRules(ALERT_RULES_STORAGE_KEY, alertRules);
+      renderAlertRulesPanel();
+      queueRender();
+    },
+    onReset() {
+      alertRules = resetAlertRules(ALERT_RULES_STORAGE_KEY);
+      renderAlertRulesPanel();
+      queueRender();
+    }
+  });
+}
+
 function refilterEvents() {
   if (!snapshotState) return;
   const allEvents = snapshotState.recent || [];
@@ -345,6 +366,7 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
 
 applyLoadedFilters();
 applyLoadedSessionFilters();
+renderAlertRulesPanel();
 
 for (const b of timeRangeBar.querySelectorAll('.range-btn')) {
   b.classList.toggle('active', b.dataset.range === currentRange);
@@ -366,7 +388,7 @@ connectStream({
 
 setInterval(() => {
   if (!snapshotState || renderQueued) return;
-  const intervalSessionRows = annotateSessionsWithState(snapshotState.sessions || [], snapshotState.agents || []);
+  const intervalSessionRows = annotateSessionsWithState(snapshotState.sessions || [], snapshotState.agents || [], Date.now(), alertRules);
   renderCards(snapshotState.totals, intervalSessionRows, snapshotState.hourlyBuckets || [], snapshotState.startedAt || '');
   renderWorkflow(snapshotState.workflowProgress || recalcWorkflow(snapshotState.agents));
   renderAgents(snapshotState.agents || [], agentsBody, agentFilter.value);
