@@ -42,6 +42,17 @@
           <h2>Sessions Workspace</h2>
           <small>세션 선택과 상세 진단을 먼저 수행하는 작업면</small>
         </div>
+        <div id="sessionControls" class="panel-head panel-head--sessions">
+          <label for="sessionQuickFilter">필터</label>
+          <select id="sessionQuickFilter">
+            <option value="all">all</option>
+            <option value="needs-attention">needs attention</option>
+            <option value="active">active</option>
+            <option value="completed">completed</option>
+          </select>
+          <input id="sessionSearch" type="search" placeholder="session/agent/state 검색" />
+        </div>
+        <small id="sessionMeta" class="session-meta" hidden></small>
         <div class="session-workspace">
           <div id="sessionsList" class="sessions-list"></div>
           <div id="sessionDetail" class="session-detail">

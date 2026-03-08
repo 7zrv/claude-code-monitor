@@ -17,7 +17,8 @@ import {
   renderSessionDetail,
   renderSessionDetailMeta,
   fetchSessionEvents,
-  getSessionExportAttrs
+  getSessionExportAttrs,
+  selectSessionsForList
 } from './lib/renders/sessions.js';
 import { isEmptySnapshot, renderEmptyState } from './lib/empty-state.js';
 
@@ -45,6 +46,9 @@ const sessionDetailTitle = document.getElementById('sessionDetailTitle');
 const sessionDetailMeta = document.getElementById('sessionDetailMeta');
 const sessionDetailExport = document.getElementById('sessionDetailExport');
 const sessionDetailEvents = document.getElementById('sessionDetailEvents');
+const sessionQuickFilter = document.getElementById('sessionQuickFilter');
+const sessionSearch = document.getElementById('sessionSearch');
+const sessionMetaEl = document.getElementById('sessionMeta');
 
 const chartEls = {
   throughputChart: document.getElementById('throughputChart'),
@@ -67,7 +71,8 @@ let snapshotState = null;
 let renderQueued = false;
 const RANGE_KEY = 'agent_monitor_range_v1';
 let currentRange = localStorage.getItem(RANGE_KEY) || '1h';
-const storageKey = 'agent_monitor_event_filters_v1';
+const EVENT_FILTERS_KEY = 'agent_monitor_event_filters_v1';
+const SESSION_FILTERS_KEY = 'agent_monitor_session_filters_v1';
 const WORKFLOW_TOGGLE_KEY = 'agent_monitor_workflow_toggle_v1';
 let showCompleted = loadToggle(WORKFLOW_TOGGLE_KEY);
 let selectedSessionId = '';
@@ -125,8 +130,39 @@ function renderWorkflow(rows = []) {
   workflowCompletedRoot.innerHTML = completed.map((row) => renderWorkflowItem(row, now)).join('');
 }
 
-function getFilters() {
+function getEventFilters() {
   return { status: eventStatusFilter.value, limit: Number(eventLimit.value) || 50, query: eventSearch.value };
+}
+
+function getSessionFilters() {
+  return { quickFilter: sessionQuickFilter.value, query: sessionSearch.value };
+}
+
+function getVisibleSessionRows(sessionRows = []) {
+  return selectSessionsForList(sessionRows, getSessionFilters());
+}
+
+function renderSessionMeta(totalCount, visibleCount) {
+  if (totalCount === 0) {
+    sessionMetaEl.hidden = true;
+    sessionMetaEl.textContent = '';
+    return;
+  }
+
+  const filters = getSessionFilters();
+  const hasFilters = filters.quickFilter !== 'all' || filters.query.trim().length > 0;
+  sessionMetaEl.hidden = false;
+  sessionMetaEl.textContent = hasFilters ? `${visibleCount} / ${totalCount} sessions` : `${totalCount} sessions`;
+}
+
+function renderSessionListPanel(sessionRows = []) {
+  const visibleRows = getVisibleSessionRows(sessionRows);
+  renderSessionMeta(sessionRows.length, visibleRows.length);
+  renderSessionsList(visibleRows, sessionsListRoot, openSessionDetail, {
+    selectedSessionId,
+    sourceCount: sessionRows.length
+  });
+  return visibleRows;
 }
 
 function renderSnapshot(snapshot) {
@@ -137,7 +173,8 @@ function renderSnapshot(snapshot) {
     if (empty) renderEmptyState(emptyStateEl);
   }
   const sessionRows = annotateSessionsWithState(snapshot.sessions || [], snapshot.agents || []);
-  const selectedSession = resolveSelectedSession(sessionRows);
+  const visibleSessionRows = getVisibleSessionRows(sessionRows);
+  const selectedSession = resolveSelectedSession(sessionRows, visibleSessionRows);
   renderCards(snapshot.totals, sessionRows, snapshot.hourlyBuckets || [], snapshot.startedAt || '');
   renderNeedsAttention(sessionRows, needsAttentionRoot, openSessionDetail);
   populateAgentFilter(snapshot.agents || [], agentFilter);
@@ -146,11 +183,11 @@ function renderSnapshot(snapshot) {
   const allEvents = snapshot.recent || [];
   renderGraphs(allEvents, chartEls, numberFmt, snapshot.toolCallStats);
   renderTimeline(allEvents, timelineRoot, timelineTooltip, agentFilter.value);
-  const filteredEvents = getFilteredEvents(allEvents, getFilters());
+  const filteredEvents = getFilteredEvents(allEvents, getEventFilters());
   renderEvents(filteredEvents, eventsRoot);
   renderEventMeta(allEvents.length, filteredEvents.length, eventMetaEl);
   renderAlerts(snapshot.alerts || [], alertsRoot, alertDrilldownRoot, snapshot, { onOpenSession: openSessionDetail });
-  renderSessionsList(sessionRows, sessionsListRoot, openSessionDetail, { selectedSessionId });
+  renderSessionListPanel(sessionRows);
   if (selectedSession && !sessionEventsCache.has(selectedSession.sessionId) && sessionDetailState.sessionId !== selectedSession.sessionId) {
     openSessionDetail(selectedSession.sessionId);
   }
@@ -158,13 +195,14 @@ function renderSnapshot(snapshot) {
   clock.textContent = `마지막 갱신 ${new Date(snapshot.generatedAt).toLocaleTimeString()}`;
 }
 
-function resolveSelectedSession(sessionRows = []) {
+function resolveSelectedSession(sessionRows = [], visibleSessionRows = sessionRows) {
   const hasSelected = selectedSessionId && sessionRows.some((row) => row.sessionId === selectedSessionId);
   if (hasSelected) {
     return sessionRows.find((row) => row.sessionId === selectedSessionId) || null;
   }
-  selectedSessionId = sessionRows[0]?.sessionId || '';
-  return sessionRows[0] || null;
+  const fallback = visibleSessionRows[0] || null;
+  selectedSessionId = fallback?.sessionId || '';
+  return fallback;
 }
 
 function renderSelectedSessionDetail(session) {
@@ -198,23 +236,42 @@ function renderSelectedSessionDetail(session) {
 }
 
 function doSaveFilters() {
-  saveFilters(storageKey, { status: eventStatusFilter.value, limit: eventLimit.value, search: eventSearch.value });
+  saveFilters(EVENT_FILTERS_KEY, { status: eventStatusFilter.value, limit: eventLimit.value, search: eventSearch.value });
+}
+
+function doSaveSessionFilters() {
+  saveFilters(SESSION_FILTERS_KEY, { quickFilter: sessionQuickFilter.value, query: sessionSearch.value });
 }
 
 function applyLoadedFilters() {
-  const filters = loadFilters(storageKey);
+  const filters = loadFilters(EVENT_FILTERS_KEY);
   if (!filters) return;
   if (filters.status) eventStatusFilter.value = filters.status;
   if (filters.limit) eventLimit.value = filters.limit;
   if (typeof filters.search === 'string') eventSearch.value = filters.search;
 }
 
+function applyLoadedSessionFilters() {
+  const filters = loadFilters(SESSION_FILTERS_KEY);
+  if (!filters) return;
+  if (filters.quickFilter) {
+    sessionQuickFilter.value = filters.quickFilter;
+    if (!sessionQuickFilter.value) sessionQuickFilter.value = 'all';
+  }
+  if (typeof filters.query === 'string') sessionSearch.value = filters.query;
+}
+
 function refilterEvents() {
   if (!snapshotState) return;
   const allEvents = snapshotState.recent || [];
-  const filtered = getFilteredEvents(allEvents, getFilters());
+  const filtered = getFilteredEvents(allEvents, getEventFilters());
   renderEvents(filtered, eventsRoot);
   renderEventMeta(allEvents.length, filtered.length, eventMetaEl);
+}
+
+function refilterSessions() {
+  if (!snapshotState) return;
+  queueRender();
 }
 
 function openSessionDetail(sessionId) {
@@ -279,12 +336,15 @@ for (const el of [eventStatusFilter, eventLimit]) {
 }
 
 eventSearch.addEventListener('input', () => { doSaveFilters(); refilterEvents(); });
+sessionQuickFilter.addEventListener('change', () => { doSaveSessionFilters(); refilterSessions(); });
+sessionSearch.addEventListener('input', () => { doSaveSessionFilters(); refilterSessions(); });
 
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
   if (snapshotState) renderGraphs(snapshotState.recent || [], chartEls, numberFmt, snapshotState.toolCallStats);
 });
 
 applyLoadedFilters();
+applyLoadedSessionFilters();
 
 for (const b of timeRangeBar.querySelectorAll('.range-btn')) {
   b.classList.toggle('active', b.dataset.range === currentRange);
@@ -310,4 +370,5 @@ setInterval(() => {
   renderCards(snapshotState.totals, intervalSessionRows, snapshotState.hourlyBuckets || [], snapshotState.startedAt || '');
   renderWorkflow(snapshotState.workflowProgress || recalcWorkflow(snapshotState.agents));
   renderAgents(snapshotState.agents || [], agentsBody, agentFilter.value);
+  renderSessionListPanel(intervalSessionRows);
 }, 1000);
