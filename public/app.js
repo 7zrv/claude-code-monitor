@@ -8,7 +8,7 @@ import { connectStream, loadSnapshot } from './lib/connection.js';
 import { annotateSessionsWithState } from './lib/session-status.js';
 import { renderGraphs } from './lib/renders/charts.js';
 import { getFilteredEvents, renderEventMeta, renderEvents } from './lib/renders/events.js';
-import { renderAgents, populateAgentFilter } from './lib/renders/agents.js';
+import { renderAgents, populateAgentFilter, toggleAgentTreeNode } from './lib/renders/agents.js';
 import { renderAlerts } from './lib/renders/alerts.js';
 import { renderTimeline } from './lib/renders/timeline.js';
 import { renderSessionsList, renderSessionDetail, fetchSessionEvents, getSessionExportAttrs } from './lib/renders/sessions.js';
@@ -215,6 +215,15 @@ agentFilter.addEventListener('change', () => {
     renderAgents(snapshotState.agents || [], agentsBody, agentFilter.value);
     renderTimeline(snapshotState.recent || [], timelineRoot, timelineTooltip, agentFilter.value);
   }
+});
+
+agentsBody.addEventListener('click', (e) => {
+  const toggle = e.target.closest('.tree-toggle');
+  if (!toggle || !snapshotState) return;
+  const { treeKey } = toggle.dataset;
+  if (!treeKey) return;
+  toggleAgentTreeNode(agentsBody, treeKey);
+  renderAgents(snapshotState.agents || [], agentsBody, agentFilter.value);
 });
 
 for (const el of [eventStatusFilter, eventLimit]) {
