@@ -1169,6 +1169,23 @@ tr.tree-last .tree-branch::before {
   align-items: start;
 }
 
+.panel-head--sessions {
+  margin-top: 10px;
+  justify-content: flex-start;
+}
+
+.panel-head--sessions input {
+  min-width: 220px;
+  flex: 1 1 220px;
+}
+
+.session-meta {
+  display: block;
+  margin: 6px 0 10px;
+  font-size: 12px;
+  color: var(--chart-sublabel);
+}
+
 .sessions-list {
   display: flex;
   flex-direction: column;

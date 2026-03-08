@@ -7,6 +7,35 @@ const REASON_LABELS = {
   cost_spike: '비용 급증'
 };
 
+const SESSION_QUICK_FILTERS = new Set(['all', 'needs-attention', 'active', 'completed']);
+
+function safeNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function safeTimestamp(value) {
+  const parsed = new Date(value || '').getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeQuickFilter(value) {
+  return SESSION_QUICK_FILTERS.has(value) ? value : 'all';
+}
+
+function sessionSearchText(session = {}) {
+  return [
+    session.sessionId,
+    session.displayName,
+    session.sessionState,
+    ...(Array.isArray(session.agentIds) ? session.agentIds : []),
+    ...(Array.isArray(session.needsAttentionReasons) ? session.needsAttentionReasons : [])
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+}
+
 function sessionReasonBadges(session = {}) {
   const reasons = Array.isArray(session.needsAttentionReasons) ? session.needsAttentionReasons : [];
   if (!reasons.length) return '';
@@ -16,20 +45,68 @@ function sessionReasonBadges(session = {}) {
 }
 
 function sessionMetaHtml(session = {}) {
-  return `<span>tokens: ${Number(session.tokenTotal || 0)}</span>
-    <span>cost: $${Number(session.costUsd || 0).toFixed(4)}</span>
+  return `<span>tokens: ${safeNumber(session.tokenTotal)}</span>
+    <span>cost: $${safeNumber(session.costUsd).toFixed(4)}</span>
     <span>agents: ${Array.isArray(session.agentIds) ? session.agentIds.length : 0}</span>
     <span>last: ${relativeTime(session.lastSeen)}</span>`;
 }
 
+export function normalizeSessionListFilters(filters = {}) {
+  return {
+    query: String(filters.query ?? '').trim().toLowerCase(),
+    quickFilter: normalizeQuickFilter(filters.quickFilter)
+  };
+}
+
+export function compareSessionsByPriority(a = {}, b = {}) {
+  const rankDelta = safeNumber(b.needsAttentionRank) - safeNumber(a.needsAttentionRank);
+  if (rankDelta !== 0) return rankDelta;
+
+  const lastSeenDelta = safeTimestamp(b.lastSeen) - safeTimestamp(a.lastSeen);
+  if (lastSeenDelta !== 0) return lastSeenDelta;
+
+  const costDelta = safeNumber(b.costUsd) - safeNumber(a.costUsd);
+  if (costDelta !== 0) return costDelta;
+
+  const tokenDelta = safeNumber(b.tokenTotal) - safeNumber(a.tokenTotal);
+  if (tokenDelta !== 0) return tokenDelta;
+
+  return String(a.sessionId || '').localeCompare(String(b.sessionId || ''));
+}
+
+export function matchesSessionFilters(session = {}, filters = {}) {
+  const { query, quickFilter } = normalizeSessionListFilters(filters);
+  const needsAttention = typeof session.needsAttention === 'boolean'
+    ? session.needsAttention
+    : safeNumber(session.needsAttentionRank) > 0;
+
+  if (quickFilter === 'needs-attention' && !needsAttention) return false;
+  if (quickFilter === 'active' && session.sessionState !== 'active') return false;
+  if (quickFilter === 'completed' && session.sessionState !== 'completed') return false;
+  if (query && !sessionSearchText(session).includes(query)) return false;
+  return true;
+}
+
+export function selectSessionsForList(sessions = [], filters = {}) {
+  return sessions.filter((session) => matchesSessionFilters(session, filters)).sort(compareSessionsByPriority);
+}
+
+function renderSessionsEmptyState(root, sourceCount = 0) {
+  root.innerHTML = sourceCount > 0
+    ? '<p class="sessions-empty">조건에 맞는 세션이 없습니다. 검색어나 필터를 조정해 보세요.</p>'
+    : `<p class="sessions-empty">아직 세션이 없습니다. Claude Code를 실행하면 세션이 여기에 표시됩니다.<br><small>수집 경로: <code>~/.claude/projects/</code></small></p>`;
+  root.onclick = null;
+}
+
 export function renderSessionsList(sessions, root, onSelect, options = {}) {
-  const { selectedSessionId = '' } = options;
-  if (!sessions || sessions.length === 0) {
-    root.innerHTML = `<p class="sessions-empty">아직 세션이 없습니다. Claude Code를 실행하면 세션이 여기에 표시됩니다.<br><small>수집 경로: <code>~/.claude/projects/</code></small></p>`;
+  const rows = Array.isArray(sessions) ? sessions : [];
+  const { selectedSessionId = '', sourceCount = rows.length } = options;
+  if (rows.length === 0) {
+    renderSessionsEmptyState(root, sourceCount);
     return;
   }
 
-  root.innerHTML = sessions
+  root.innerHTML = rows
     .map(
       (s) => `<div class="session-item${s.sessionId === selectedSessionId ? ' session-item--selected' : ''}" data-session-id="${escapeHtml(s.sessionId)}">
         <div class="session-item-main">

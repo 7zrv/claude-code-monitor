@@ -1,19 +1,166 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { getSessionExportAttrs, renderSessionsList, renderSessionDetail, renderSessionDetailMeta } from '../lib/renders/sessions.js';
+import {
+  getSessionExportAttrs,
+  renderSessionsList,
+  renderSessionDetail,
+  renderSessionDetailMeta,
+  selectSessionsForList
+} from '../lib/renders/sessions.js';
 
 function makeRoot() {
   return { innerHTML: '', dataset: {}, onclick: null };
 }
 
 const baseSessions = [
-  { sessionId: 's1', lastSeen: '2025-01-01T00:00:10Z', tokenTotal: 500, costUsd: 0.05, agentIds: ['a1'], sessionState: 'active' },
-  { sessionId: 's2', lastSeen: '2025-01-01T00:00:20Z', tokenTotal: 1000, costUsd: 0.10, agentIds: ['a1', 'a2'], sessionState: 'completed' }
+  {
+    sessionId: 's1',
+    lastSeen: '2025-01-01T00:00:10Z',
+    tokenTotal: 500,
+    costUsd: 0.05,
+    agentIds: ['a1'],
+    sessionState: 'active',
+    needsAttention: false,
+    needsAttentionRank: 0,
+    needsAttentionReasons: []
+  },
+  {
+    sessionId: 's2',
+    lastSeen: '2025-01-01T00:00:20Z',
+    tokenTotal: 1000,
+    costUsd: 0.1,
+    agentIds: ['a1', 'a2'],
+    sessionState: 'completed',
+    needsAttention: true,
+    needsAttentionRank: 300,
+    needsAttentionReasons: ['stuck']
+  }
 ];
+
+describe('selectSessionsForList', () => {
+  it('sorts sessions by risk, recency, cost, then token total', () => {
+    const sessions = [
+      {
+        sessionId: 'idle-most-recent',
+        lastSeen: '2025-01-01T00:00:50Z',
+        costUsd: 1.5,
+        tokenTotal: 5000,
+        needsAttentionRank: 0,
+        needsAttention: false,
+        sessionState: 'idle',
+        agentIds: []
+      },
+      {
+        sessionId: 'higher-cost',
+        lastSeen: '2025-01-01T00:00:20Z',
+        costUsd: 0.6,
+        tokenTotal: 50,
+        needsAttentionRank: 300,
+        needsAttention: true,
+        sessionState: 'active',
+        agentIds: []
+      },
+      {
+        sessionId: 'same-cost-more-tokens',
+        lastSeen: '2025-01-01T00:00:20Z',
+        costUsd: 0.4,
+        tokenTotal: 900,
+        needsAttentionRank: 300,
+        needsAttention: true,
+        sessionState: 'active',
+        agentIds: []
+      },
+      {
+        sessionId: 'same-cost-fewer-tokens',
+        lastSeen: '2025-01-01T00:00:20Z',
+        costUsd: 0.4,
+        tokenTotal: 200,
+        needsAttentionRank: 300,
+        needsAttention: true,
+        sessionState: 'active',
+        agentIds: []
+      },
+      {
+        sessionId: 'recent-warning',
+        lastSeen: '2025-01-01T00:00:30Z',
+        costUsd: 0.05,
+        tokenTotal: 100,
+        needsAttentionRank: 300,
+        needsAttention: true,
+        sessionState: 'active',
+        agentIds: []
+      },
+      {
+        sessionId: 'critical',
+        lastSeen: '2025-01-01T00:00:00Z',
+        costUsd: 0.01,
+        tokenTotal: 10,
+        needsAttentionRank: 500,
+        needsAttention: true,
+        sessionState: 'failed',
+        agentIds: []
+      }
+    ];
+
+    const result = selectSessionsForList(sessions);
+
+    assert.deepEqual(
+      result.map((session) => session.sessionId),
+      ['critical', 'recent-warning', 'higher-cost', 'same-cost-more-tokens', 'same-cost-fewer-tokens', 'idle-most-recent']
+    );
+  });
+
+  it('filters sessions by quick filter and search query', () => {
+    const sessions = [
+      {
+        sessionId: 'alpha-risk',
+        lastSeen: '2025-01-01T00:00:10Z',
+        costUsd: 0.7,
+        tokenTotal: 25000,
+        needsAttentionRank: 100,
+        needsAttention: true,
+        needsAttentionReasons: ['cost_spike'],
+        sessionState: 'active',
+        agentIds: ['writer-1']
+      },
+      {
+        sessionId: 'beta-done',
+        lastSeen: '2025-01-01T00:00:20Z',
+        costUsd: 0.1,
+        tokenTotal: 1000,
+        needsAttentionRank: 0,
+        needsAttention: false,
+        needsAttentionReasons: [],
+        sessionState: 'completed',
+        agentIds: ['reviewer-2']
+      }
+    ];
+
+    assert.deepEqual(
+      selectSessionsForList(sessions, { quickFilter: 'needs-attention' }).map((session) => session.sessionId),
+      ['alpha-risk']
+    );
+    assert.deepEqual(
+      selectSessionsForList(sessions, { quickFilter: 'completed' }).map((session) => session.sessionId),
+      ['beta-done']
+    );
+    assert.deepEqual(
+      selectSessionsForList(sessions, { query: 'WRITER-1' }).map((session) => session.sessionId),
+      ['alpha-risk']
+    );
+    assert.deepEqual(
+      selectSessionsForList(sessions, { query: 'cost_spike' }).map((session) => session.sessionId),
+      ['alpha-risk']
+    );
+  });
+});
 
 describe('renderSessionsList', () => {
   let root;
-  beforeEach(() => { root = makeRoot(); });
+
+  beforeEach(() => {
+    root = makeRoot();
+  });
 
   it('renders session items for each session', () => {
     renderSessionsList(baseSessions, root, () => {});
@@ -31,10 +178,15 @@ describe('renderSessionsList', () => {
     assert.ok(root.innerHTML.includes('~/.claude/projects/'));
   });
 
+  it('shows filtered-empty copy when sessions exist but no rows match', () => {
+    renderSessionsList([], root, () => {}, { sourceCount: 2 });
+    assert.ok(root.innerHTML.includes('조건에 맞는 세션이 없습니다'));
+  });
+
   it('includes session cost and token info', () => {
     renderSessionsList(baseSessions, root, () => {});
     assert.ok(root.innerHTML.includes('500'));
-    assert.ok(root.innerHTML.includes('0.05'));
+    assert.ok(root.innerHTML.includes('0.0500'));
   });
 
   it('includes session state badge', () => {
@@ -47,11 +199,32 @@ describe('renderSessionsList', () => {
     renderSessionsList(baseSessions, root, () => {}, { selectedSessionId: 's2' });
     assert.ok(root.innerHTML.includes('session-item--selected'));
   });
+
+  it('keeps click-through wired to the selected session id', () => {
+    let selectedSessionId = '';
+    renderSessionsList(baseSessions, root, (sessionId) => {
+      selectedSessionId = sessionId;
+    });
+
+    root.onclick({
+      target: {
+        closest(selector) {
+          assert.equal(selector, '.session-item[data-session-id]');
+          return { dataset: { sessionId: 's2' } };
+        }
+      }
+    });
+
+    assert.equal(selectedSessionId, 's2');
+  });
 });
 
 describe('renderSessionDetail', () => {
   let root;
-  beforeEach(() => { root = makeRoot(); });
+
+  beforeEach(() => {
+    root = makeRoot();
+  });
 
   it('renders event list', () => {
     const events = [
@@ -70,7 +243,10 @@ describe('renderSessionDetail', () => {
 
 describe('renderSessionDetailMeta', () => {
   let root;
-  beforeEach(() => { root = makeRoot(); });
+
+  beforeEach(() => {
+    root = makeRoot();
+  });
 
   it('renders empty workspace guidance when no session is selected', () => {
     renderSessionDetailMeta(null, root);
