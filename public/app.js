@@ -6,6 +6,7 @@ import { applyIncrementalEvent } from './lib/state.js';
 import { saveFilters, loadFilters, saveToggle, loadToggle } from './lib/persistence.js';
 import { connectStream, loadSnapshot } from './lib/connection.js';
 import { annotateSessionsWithState } from './lib/session-status.js';
+import { renderNeedsAttention } from './lib/needs-attention.js';
 import { renderGraphs } from './lib/renders/charts.js';
 import { getFilteredEvents, renderEventMeta, renderEvents } from './lib/renders/events.js';
 import { renderAgents, populateAgentFilter, toggleAgentTreeNode } from './lib/renders/agents.js';
@@ -52,6 +53,7 @@ const workflowCompletedRoot = document.getElementById('workflowCompleted');
 
 const emptyStateEl = document.getElementById('emptyState');
 const timeRangeBar = document.getElementById('timeRangeBar');
+const needsAttentionRoot = document.getElementById('needsAttention');
 
 const numberFmt = new Intl.NumberFormat('ko-KR');
 let snapshotState = null;
@@ -126,6 +128,7 @@ function renderSnapshot(snapshot) {
   }
   const sessionRows = annotateSessionsWithState(snapshot.sessions || [], snapshot.agents || []);
   renderCards(snapshot.totals, sessionRows, snapshot.hourlyBuckets || [], snapshot.startedAt || '');
+  renderNeedsAttention(sessionRows, needsAttentionRoot, openSessionDetail);
   populateAgentFilter(snapshot.agents || [], agentFilter);
   renderWorkflow(snapshot.workflowProgress || recalcWorkflow(snapshot.agents));
   renderAgents(snapshot.agents || [], agentsBody, agentFilter.value);

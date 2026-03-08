@@ -187,6 +187,116 @@ main {
   font-weight: 600;
 }
 
+.needs-attention-list {
+  display: grid;
+  gap: 8px;
+}
+
+.needs-attention-empty {
+  margin: 0;
+  color: var(--chart-sublabel);
+  font-style: italic;
+  padding: 4px 0;
+}
+
+.attention-item {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border-medium);
+  border-radius: 10px;
+  background: var(--surface-card);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
+}
+
+.attention-item:hover {
+  transform: translateY(-1px);
+  border-color: var(--border);
+  box-shadow: 0 4px 16px var(--shadow-hover-subtle);
+}
+
+.attention-item-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.attention-item-title {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.attention-item-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.attention-item-id {
+  font-size: 14px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attention-item-score {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.58;
+  white-space: nowrap;
+}
+
+.attention-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.attention-reason {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.attention-reason--failed {
+  border-color: var(--color-error);
+  color: var(--color-error);
+}
+
+.attention-reason--stuck,
+.attention-reason--warning {
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+}
+
+.attention-reason--cost_spike {
+  border-color: var(--warm);
+  color: var(--warm-text);
+}
+
+.attention-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  font-size: 12px;
+  color: var(--chart-sublabel);
+}
+
 .progress-bar {
   margin-top: 8px;
   height: 6px;
@@ -702,6 +812,14 @@ tbody tr:hover td {
   .event {
     grid-template-columns: 1fr;
     gap: 4px;
+  }
+
+  .attention-item-main {
+    flex-direction: column;
+  }
+
+  .attention-item-score {
+    align-self: flex-start;
   }
 
   th,
