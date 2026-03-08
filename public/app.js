@@ -7,6 +7,7 @@ import { ALERT_RULES_STORAGE_KEY } from './lib/alert-rules.js';
 import { saveFilters, loadFilters, saveToggle, loadToggle, loadAlertRules, saveAlertRules, resetAlertRules } from './lib/persistence.js';
 import { connectStream, loadSnapshot } from './lib/connection.js';
 import { annotateSessionsWithState } from './lib/session-status.js';
+import { mergeAlertsForPanel } from './lib/derived-alerts.js';
 import { renderNeedsAttention } from './lib/needs-attention.js';
 import { renderAlertRules } from './lib/renders/alert-rules.js';
 import { renderGraphs } from './lib/renders/charts.js';
@@ -179,6 +180,8 @@ function renderSnapshot(snapshot) {
   const sessionRows = annotateSessionsWithState(snapshot.sessions || [], snapshot.agents || [], Date.now(), alertRules);
   const visibleSessionRows = getVisibleSessionRows(sessionRows);
   const selectedSession = resolveSelectedSession(sessionRows, visibleSessionRows);
+  const alerts = mergeAlertsForPanel(snapshot.alerts || [], sessionRows, { generatedAt: snapshot.generatedAt });
+  const alertSnapshot = { ...snapshot, sessions: sessionRows };
   renderCards(snapshot.totals, sessionRows, snapshot.hourlyBuckets || [], snapshot.startedAt || '');
   renderNeedsAttention(sessionRows, needsAttentionRoot, openSessionDetail);
   populateAgentFilter(snapshot.agents || [], agentFilter);
@@ -190,7 +193,7 @@ function renderSnapshot(snapshot) {
   const filteredEvents = getFilteredEvents(allEvents, getEventFilters());
   renderEvents(filteredEvents, eventsRoot);
   renderEventMeta(allEvents.length, filteredEvents.length, eventMetaEl);
-  renderAlerts(snapshot.alerts || [], alertsRoot, alertDrilldownRoot, snapshot, { onOpenSession: openSessionDetail });
+  renderAlerts(alerts, alertsRoot, alertDrilldownRoot, alertSnapshot, { onOpenSession: openSessionDetail });
   renderSessionListPanel(sessionRows);
   if (selectedSession && !sessionEventsCache.has(selectedSession.sessionId) && sessionDetailState.sessionId !== selectedSession.sessionId) {
     openSessionDetail(selectedSession.sessionId);
