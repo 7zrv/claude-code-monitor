@@ -62,12 +62,8 @@ fn main() {
         ..State::default()
     };
     if let Some(ref db) = db {
-        if let Ok(buckets) = db.query_since("") {
+        if let Ok(buckets) = db.restore_buckets(744) {
             initial_state.hourly_buckets = buckets;
-            if initial_state.hourly_buckets.len() > 744 {
-                let start = initial_state.hourly_buckets.len() - 744;
-                initial_state.hourly_buckets.drain(..start);
-            }
         }
         if let Ok((tokens, cost)) = db.query_totals() {
             initial_state.token_total = tokens;

@@ -61,6 +61,15 @@ impl Db {
             rusqlite::params![before_key],
         )
     }
+
+    pub fn restore_buckets(&self, max: usize) -> rusqlite::Result<Vec<HourBucket>> {
+        let mut buckets = self.query_since("")?;
+        if buckets.len() > max {
+            let start = buckets.len() - max;
+            buckets.drain(..start);
+        }
+        Ok(buckets)
+    }
 }
 
 #[cfg(test)]
@@ -144,6 +153,28 @@ mod tests {
         let rows = db.query_since("").unwrap();
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].hour_key, "2025-01-01T12");
+    }
+
+    #[test]
+    fn test_db_restore_buckets_caps_at_max() {
+        let (db, _dir) = open_temp_db();
+        for i in 0..10 {
+            db.upsert_bucket(&format!("2025-01-01T{:02}", i), 10, 0.01)
+                .unwrap();
+        }
+        let buckets = db.restore_buckets(5).unwrap();
+        assert_eq!(buckets.len(), 5);
+        assert_eq!(buckets[0].hour_key, "2025-01-01T05");
+        assert_eq!(buckets[4].hour_key, "2025-01-01T09");
+    }
+
+    #[test]
+    fn test_db_restore_buckets_under_max() {
+        let (db, _dir) = open_temp_db();
+        db.upsert_bucket("2025-01-01T10", 10, 0.01).unwrap();
+        db.upsert_bucket("2025-01-01T11", 20, 0.02).unwrap();
+        let buckets = db.restore_buckets(744).unwrap();
+        assert_eq!(buckets.len(), 2);
     }
 
     #[test]
