@@ -1,8 +1,6 @@
 export function buildCardData(sessions = [], totals = {}, numberFmt, rangeInfo = null) {
   const activeSessions = sessions.filter((s) => s.sessionState === 'active').length;
-  const needsAttention = sessions.filter(
-    (s) => s.sessionState === 'stuck' || s.sessionState === 'failed'
-  ).length;
+  const needsAttention = sessions.filter((s) => Boolean(s.needsAttention)).length;
 
   const tokenLabel = rangeInfo ? `${rangeInfo.label} 토큰` : '전체 토큰';
   const tokenValue = rangeInfo ? rangeInfo.tokenTotal : (totals.tokenTotal || 0);

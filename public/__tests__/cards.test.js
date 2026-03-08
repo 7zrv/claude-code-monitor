@@ -5,6 +5,11 @@ import { buildCardData } from '../lib/cards.js';
 const numberFmt = new Intl.NumberFormat('ko-KR');
 
 const makeSessions = (states) => states.map((sessionState) => ({ sessionState }));
+const makeAttentionSession = (overrides = {}) => ({
+  sessionState: 'active',
+  needsAttention: false,
+  ...overrides
+});
 
 describe('buildCardData', () => {
   it('returns 5 cards total', () => {
@@ -43,10 +48,26 @@ describe('buildCardData', () => {
   });
 
   it('counts stuck + failed sessions as 주의 필요', () => {
-    const sessions = makeSessions(['active', 'stuck', 'failed', 'completed']);
+    const sessions = [
+      makeAttentionSession({ sessionState: 'active' }),
+      makeAttentionSession({ sessionState: 'stuck', needsAttention: true }),
+      makeAttentionSession({ sessionState: 'failed', needsAttention: true }),
+      makeAttentionSession({ sessionState: 'completed' })
+    ];
     const cards = buildCardData(sessions, {}, numberFmt);
     const card = cards.find((c) => c.label === '주의 필요');
     assert.equal(card.value, '2');
+    assert.equal(card.type, 'warning');
+  });
+
+  it('counts sessions with needsAttention even when state is active', () => {
+    const sessions = [
+      makeAttentionSession({ sessionState: 'active', needsAttention: true }),
+      makeAttentionSession({ sessionState: 'completed', needsAttention: false })
+    ];
+    const cards = buildCardData(sessions, {}, numberFmt);
+    const card = cards.find((c) => c.label === '주의 필요');
+    assert.equal(card.value, '1');
     assert.equal(card.type, 'warning');
   });
 
