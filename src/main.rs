@@ -1,4 +1,5 @@
 mod collector;
+mod db;
 mod http;
 mod state;
 mod types;
@@ -10,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use collector::spawn_claude_collector;
+use db::Db;
 use http::{handle_client, spawn_sse_sweeper};
 use types::{App, State};
 use utils::now_iso;
@@ -25,6 +27,10 @@ fn main() {
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(25);
+    let retention_days: i64 = std::env::var("MONITOR_RETENTION_DAYS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(90);
     let claude_home = std::env::var("CLAUDE_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
@@ -35,11 +41,40 @@ fn main() {
         });
     let listener = std::net::TcpListener::bind(format!("{}:{}", host, port)).expect("bind failed");
 
+    let db_path = claude_home.join("monitor.db");
+    let db = match Db::open(&db_path) {
+        Ok(d) => {
+            println!("[db] opened {}", db_path.display());
+            Some(d)
+        }
+        Err(e) => {
+            eprintln!(
+                "[db] failed to open {}: {} — running without persistence",
+                db_path.display(),
+                e
+            );
+            None
+        }
+    };
+
+    let mut initial_state = State {
+        started_at: now_iso(),
+        ..State::default()
+    };
+    if let Some(ref db) = db {
+        if let Ok(buckets) = db.restore_buckets(744) {
+            initial_state.hourly_buckets = buckets;
+        }
+        if let Ok((tokens, cost)) = db.query_totals() {
+            initial_state.token_total = tokens;
+            initial_state.cost_total_usd = cost;
+        }
+    }
+
+    let db_arc = db.map(|d| Arc::new(Mutex::new(d)));
+
     let app = App {
-        state: Arc::new(Mutex::new(State {
-            started_at: now_iso(),
-            ..State::default()
-        })),
+        state: Arc::new(Mutex::new(initial_state)),
         sse_clients: Arc::new(Mutex::new(Vec::new())),
         event_seq: Arc::new(AtomicU64::new(1)),
         public_dir: Arc::new(
@@ -47,7 +82,35 @@ fn main() {
                 .map(PathBuf::from)
                 .unwrap_or_else(|_| PathBuf::from("public")),
         ),
+        db: db_arc.clone(),
     };
+
+    if let Some(db_arc) = db_arc {
+        thread::spawn(move || {
+            let interval = std::time::Duration::from_secs(24 * 60 * 60);
+            loop {
+                thread::sleep(interval);
+                let before_key = {
+                    let now = time::OffsetDateTime::now_utc();
+                    let cutoff = now - time::Duration::days(retention_days);
+                    cutoff
+                        .format(&time::format_description::well_known::Rfc3339)
+                        .unwrap_or_default()
+                };
+                let before_hour = if before_key.len() >= 13 {
+                    &before_key[..13]
+                } else {
+                    ""
+                };
+                if let Ok(db) = db_arc.lock() {
+                    match db.prune_before(before_hour) {
+                        Ok(n) if n > 0 => println!("[db] pruned {} old buckets", n),
+                        _ => {}
+                    }
+                }
+            }
+        });
+    }
 
     spawn_claude_collector(app.clone(), claude_home, poll_ms, backfill_lines);
     spawn_sse_sweeper(app.clone());

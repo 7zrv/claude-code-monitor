@@ -289,6 +289,14 @@ pub fn append_event(app: &App, evt: Event) {
                     state.hourly_buckets.remove(0);
                 }
             }
+
+            if let Some(db_arc) = &app.db {
+                if let Ok(db) = db_arc.lock() {
+                    if let Err(e) = db.upsert_bucket(hour_key, token_total, cost_delta) {
+                        eprintln!("[db] upsert_bucket error: {e}");
+                    }
+                }
+            }
         }
 
         if evt.event == "tool_call" {
@@ -414,6 +422,7 @@ mod tests {
             sse_clients: Arc::new(Mutex::new(Vec::new())),
             event_seq: Arc::new(AtomicU64::new(1)),
             public_dir: Arc::new(PathBuf::from("public")),
+            db: None,
         }
     }
 
@@ -1744,5 +1753,29 @@ mod tests {
         assert_eq!(snap.hourly_buckets.len(), 1);
         assert_eq!(snap.hourly_buckets[0].hour_key, "2025-01-01T14");
         assert_eq!(snap.hourly_buckets[0].token_total, 500);
+    }
+
+    #[test]
+    fn test_append_event_persists_bucket_to_db() {
+        use crate::db::Db;
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(&dir.path().join("test.db")).unwrap();
+        let db_arc = Arc::new(Mutex::new(db));
+        let app = App {
+            state: Arc::new(Mutex::new(State::default())),
+            sse_clients: Arc::new(Mutex::new(Vec::new())),
+            event_seq: Arc::new(std::sync::atomic::AtomicU64::new(1)),
+            public_dir: Arc::new(PathBuf::from("public")),
+            db: Some(db_arc.clone()),
+        };
+        let meta = json!({ "tokenUsage": { "totalTokens": 100 } });
+        let evt = make_event_with_received_at("msg", "2025-01-01T14:00:00Z", meta);
+        append_event(&app, evt);
+
+        let db = db_arc.lock().unwrap();
+        let rows = db.query_since("").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].hour_key, "2025-01-01T14");
+        assert_eq!(rows[0].token_total, 100);
     }
 }
