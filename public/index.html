@@ -71,38 +71,17 @@
 
       <section class="panel">
         <div class="panel-head">
-          <h2>세션 타임라인</h2>
+          <h2>Alerts</h2>
+          <small class="panel-head-note">경고 확인 후 바로 세션 진단으로 이동하는 진입점</small>
         </div>
-        <div class="timeline-scroll">
-          <div id="timeline" class="timeline"></div>
-          <div id="timelineTooltip" class="chart-tooltip" hidden></div>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h2>Realtime Graphs</h2>
-        <div class="charts-grid">
-          <article class="chart-card">
-            <h3>이벤트 처리량 (분당)</h3>
-            <svg id="throughputChart" class="throughput-chart" role="img" aria-label="분당 이벤트 처리량 바 차트" viewBox="0 0 640 220" preserveAspectRatio="none"></svg>
-            <div id="throughputTooltip" class="chart-tooltip" hidden></div>
-          </article>
-          <article class="chart-card">
-            <h3>모델별 토큰 추이 (분당)</h3>
-            <svg id="tokenTrendChart" class="token-trend-chart" role="img" aria-label="모델별 분당 토큰 사용량 추이 차트" viewBox="0 0 640 220" preserveAspectRatio="none"></svg>
-            <div id="tokenTrendLegend" class="token-legend"></div>
-          </article>
-          <article class="chart-card">
-            <h3>도구 호출 빈도 (Top 10)</h3>
-            <svg id="toolCallChart" class="tool-call-chart" role="img" aria-label="도구별 호출 빈도 가로 바 차트" viewBox="0 0 640 220" preserveAspectRatio="none"></svg>
-            <div id="toolCallTooltip" class="chart-tooltip" hidden></div>
-          </article>
-        </div>
+        <div id="alerts" class="events"></div>
+        <div id="alertDrilldown" class="alert-drilldown" hidden></div>
       </section>
 
       <section class="panel">
         <div class="panel-head">
-          <h2>Workflow 진행 현황</h2>
+          <h2>Workflow</h2>
+          <small class="panel-head-note">현재 흐름을 빠르게 훑는 보조 신호</small>
           <button id="workflowToggle" class="workflow-toggle-btn">완료된 세션 (0)</button>
         </div>
         <div class="workflow" id="workflow"></div>
@@ -112,6 +91,7 @@
       <section class="panel">
         <div class="panel-head panel-head--agents">
           <h2>에이전트</h2>
+          <small class="panel-head-note">세션 내부 실행 주체를 확인하는 참고 표</small>
           <label for="agentFilter">필터</label>
           <select id="agentFilter">
             <option value="all">all</option>
@@ -136,8 +116,44 @@
       </section>
 
       <section class="panel">
-        <h2>최근 이벤트</h2>
         <div class="panel-head">
+          <h2>세션 타임라인</h2>
+          <small class="panel-head-note">시간축으로 세션 변화를 보는 보조 분석 영역</small>
+        </div>
+        <div class="timeline-scroll">
+          <div id="timeline" class="timeline"></div>
+          <div id="timelineTooltip" class="chart-tooltip" hidden></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>분석 차트</h2>
+          <small class="panel-head-note">처리량, 토큰, 도구 호출 패턴을 보는 보조 분석 영역</small>
+        </div>
+        <div class="charts-grid">
+          <article class="chart-card">
+            <h3>이벤트 처리량 (분당)</h3>
+            <svg id="throughputChart" class="throughput-chart" role="img" aria-label="분당 이벤트 처리량 바 차트" viewBox="0 0 640 220" preserveAspectRatio="none"></svg>
+            <div id="throughputTooltip" class="chart-tooltip" hidden></div>
+          </article>
+          <article class="chart-card">
+            <h3>모델별 토큰 추이 (분당)</h3>
+            <svg id="tokenTrendChart" class="token-trend-chart" role="img" aria-label="모델별 분당 토큰 사용량 추이 차트" viewBox="0 0 640 220" preserveAspectRatio="none"></svg>
+            <div id="tokenTrendLegend" class="token-legend"></div>
+          </article>
+          <article class="chart-card">
+            <h3>도구 호출 빈도 (Top 10)</h3>
+            <svg id="toolCallChart" class="tool-call-chart" role="img" aria-label="도구별 호출 빈도 가로 바 차트" viewBox="0 0 640 220" preserveAspectRatio="none"></svg>
+            <div id="toolCallTooltip" class="chart-tooltip" hidden></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>최근 이벤트 로그</h2>
+          <small class="panel-head-note">세부 분석과 회고를 위한 하단 로그 영역</small>
           <label for="eventStatusFilter">Status</label>
           <select id="eventStatusFilter">
             <option value="all">all</option>
@@ -155,12 +171,6 @@
         </div>
         <small id="eventMeta"></small>
         <div id="events" class="events"></div>
-      </section>
-
-      <section class="panel">
-        <h2>Alerts (warning/error)</h2>
-        <div id="alerts" class="events"></div>
-        <div id="alertDrilldown" class="alert-drilldown" hidden></div>
       </section>
     </main>
 
