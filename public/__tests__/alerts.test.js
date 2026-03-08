@@ -89,9 +89,19 @@ describe('alertItemHtml', () => {
     const html = alertItemHtml(makeAlert(), false, 'sess-1');
     assert.ok(html.includes('data-session-id="sess-1"'));
   });
+
+  it('uses a session label for session-derived alerts', () => {
+    const html = alertItemHtml(makeAlert({ agentId: '', sessionId: 'sess-1' }), false, 'sess-1');
+    assert.ok(html.includes('Session sess-1'));
+  });
 });
 
 describe('resolveAlertSessionId', () => {
+  it('prefers a direct session id on the alert', () => {
+    const alert = makeAlert({ sessionId: 'sess-direct' });
+    assert.equal(resolveAlertSessionId(alert, makeSnapshot()), 'sess-direct');
+  });
+
   it('prefers agent state session id', () => {
     const alert = makeAlert();
     const snapshot = makeSnapshot({
@@ -153,7 +163,7 @@ describe('getAlertContext', () => {
 
   it('returns empty context when snapshot is null', () => {
     const ctx = getAlertContext('agent-abc', null);
-    assert.deepEqual(ctx, { recentEvents: [], agentState: null, linkedSessionId: '' });
+    assert.deepEqual(ctx, { recentEvents: [], agentState: null, linkedSessionId: '', contextLabel: '' });
   });
 
   it('includes linked session id in context when available', () => {
@@ -162,6 +172,22 @@ describe('getAlertContext', () => {
     });
     const ctx = getAlertContext('agent-abc', snapshot);
     assert.equal(ctx.linkedSessionId, 'sess-1');
+  });
+
+  it('uses session context for session-derived alerts', () => {
+    const snapshot = makeSnapshot({
+      recent: [
+        makeEvent({ sessionId: 'sess-1', event: 'TaskStart' }),
+        makeEvent({ agentId: 'agent-other', sessionId: 'sess-1', event: 'TaskProgress' }),
+        makeEvent({ sessionId: 'sess-2', event: 'TaskOther' })
+      ]
+    });
+    const ctx = getAlertContext({ sessionId: 'sess-1' }, snapshot);
+
+    assert.equal(ctx.agentState, null);
+    assert.equal(ctx.linkedSessionId, 'sess-1');
+    assert.equal(ctx.contextLabel, 'sess-1');
+    assert.deepEqual(ctx.recentEvents.map((event) => event.event), ['TaskStart', 'TaskProgress']);
   });
 });
 
@@ -226,6 +252,14 @@ describe('drilldownHtml', () => {
     const html = drilldownHtml(makeAlert(), { recentEvents: [], agentState: null, linkedSessionId: 'sess-1' });
     assert.ok(html.includes('Linked Session'));
     assert.ok(html.includes('data-session-open="sess-1"'));
+  });
+
+  it('uses the session id as recent-events context for derived alerts', () => {
+    const html = drilldownHtml(
+      makeAlert({ agentId: '', sessionId: 'sess-1' }),
+      { recentEvents: [], agentState: null, linkedSessionId: 'sess-1', contextLabel: 'sess-1' }
+    );
+    assert.ok(html.includes('Recent Events (sess-1)'));
   });
 });
 
@@ -318,5 +352,42 @@ describe('renderAlerts', () => {
 
     assert.equal(openedSessionId, '');
     assert.equal(drilldownRoot.hidden, false);
+  });
+
+  it('opens a session-derived alert through its direct session link', () => {
+    const alertsRoot = makeAlertsRoot();
+    const drilldownRoot = makeDrilldownRoot();
+    let openedSessionId = '';
+
+    renderAlerts([makeAlert({
+      id: 'derived:cost_spike:sess-derived',
+      agentId: '',
+      sessionId: 'sess-derived',
+      event: 'SessionCostSpike'
+    })], alertsRoot, drilldownRoot, makeSnapshot({
+      recent: [makeEvent({ sessionId: 'sess-derived' })]
+    }), {
+      onOpenSession(sessionId) {
+        openedSessionId = sessionId;
+      }
+    });
+
+    alertsRoot.onclick({
+      target: {
+        closest(selector) {
+          if (selector === '[data-alert-id]') {
+            return {
+              dataset: { alertId: 'derived:cost_spike:sess-derived', sessionId: 'sess-derived' },
+              classList: { add() {}, remove() {} }
+            };
+          }
+          return null;
+        }
+      }
+    });
+
+    assert.equal(openedSessionId, 'sess-derived');
+    assert.equal(drilldownRoot.hidden, false);
+    assert.ok(drilldownRoot.innerHTML.includes('sess-derived'));
   });
 });

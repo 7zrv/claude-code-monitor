@@ -3,11 +3,22 @@ import { displayNameFor } from '../agent-display.js';
 
 let _selectedAlertId = null;
 
+function alertSubjectLabel(alert = {}) {
+  if (alert.agentId) return displayNameFor(alert.agentId);
+  if (alert.sessionId) return `Session ${alert.sessionId}`;
+  return 'Unknown';
+}
+
+function alertSubjectTitle(alert = {}) {
+  return alert.agentId || alert.sessionId || '';
+}
+
 export function resetAlertSelection() {
   _selectedAlertId = null;
 }
 
 export function resolveAlertSessionId(alert = {}, snapshot) {
+  if (alert.sessionId) return alert.sessionId;
   if (!snapshot || !alert.agentId) return '';
   const agentState = (snapshot.agents || []).find((agent) => agent.agentId === alert.agentId);
   if (agentState?.sessionId) return agentState.sessionId;
@@ -20,25 +31,37 @@ export function alertItemHtml(alert, isSelected = false, sessionId = '') {
   return `
       <div class="${cls}" data-alert-id="${escapeHtml(alert.id)}"${sessionId ? ` data-session-id="${escapeHtml(sessionId)}"` : ''}>
         <span>${new Date(alert.createdAt).toLocaleTimeString()}</span>
-        <span title="${escapeHtml(alert.agentId)}"><strong>${escapeHtml(displayNameFor(alert.agentId))}</strong></span>
+        <span title="${escapeHtml(alertSubjectTitle(alert))}"><strong>${escapeHtml(alertSubjectLabel(alert))}</strong></span>
         <span>${escapeHtml(alert.event)}</span>
         <span>${escapeHtml(alert.message)}</span>
         ${statusPill(alert.severity)}
       </div>`;
 }
 
-export function getAlertContext(agentId, snapshot) {
-  if (!snapshot) return { recentEvents: [], agentState: null, linkedSessionId: '' };
-  const recentEvents = (snapshot.recent || [])
-    .filter((e) => e.agentId === agentId)
-    .slice(0, 5);
-  const agentState = (snapshot.agents || []).find((a) => a.agentId === agentId) || null;
-  const linkedSessionId = agentState?.sessionId || recentEvents.find((event) => event.sessionId)?.sessionId || '';
-  return { recentEvents, agentState, linkedSessionId };
+export function getAlertContext(alertOrAgentId, snapshot) {
+  if (!snapshot) return { recentEvents: [], agentState: null, linkedSessionId: '', contextLabel: '' };
+
+  const alert = typeof alertOrAgentId === 'string'
+    ? { agentId: alertOrAgentId }
+    : (alertOrAgentId || {});
+  const linkedSessionId = resolveAlertSessionId(alert, snapshot);
+  const recentEvents = alert.agentId
+    ? (snapshot.recent || []).filter((event) => event.agentId === alert.agentId).slice(0, 5)
+    : (snapshot.recent || []).filter((event) => linkedSessionId && event.sessionId === linkedSessionId).slice(0, 5);
+  const agentState = alert.agentId
+    ? (snapshot.agents || []).find((agent) => agent.agentId === alert.agentId) || null
+    : null;
+
+  return {
+    recentEvents,
+    agentState,
+    linkedSessionId,
+    contextLabel: alert.agentId || linkedSessionId || ''
+  };
 }
 
 export function drilldownHtml(alert, context) {
-  const { recentEvents, agentState, linkedSessionId } = context;
+  const { recentEvents, agentState, linkedSessionId, contextLabel } = context;
 
   const agentSection = agentState
     ? `<div class="drilldown-section">
@@ -75,7 +98,7 @@ export function drilldownHtml(alert, context) {
           ${toolInfo}
         </div>`;
       }).join('')
-    : '<div class="drilldown-event">No recent events for this agent</div>';
+    : '<div class="drilldown-event">No recent events for this alert</div>';
 
   return `
     <div class="drilldown-header">
@@ -89,7 +112,7 @@ export function drilldownHtml(alert, context) {
     ${sessionSection}
     ${agentSection}
     <div class="drilldown-section">
-      <h3>Recent Events (${escapeHtml(alert.agentId)})</h3>
+      <h3>Recent Events (${escapeHtml(contextLabel || alert.agentId || linkedSessionId || 'context')})</h3>
       ${eventsSection}
     </div>`;
 }
@@ -117,7 +140,7 @@ export function renderAlerts(alerts, el, drilldownEl, snapshot, options = {}) {
   if (_selectedAlertId && drilldownEl) {
     const selected = alerts.find((a) => a.id === _selectedAlertId);
     if (selected) {
-      const ctx = getAlertContext(selected.agentId, snapshot);
+      const ctx = getAlertContext(selected, snapshot);
       drilldownEl.innerHTML = drilldownHtml(selected, ctx);
       drilldownEl.removeAttribute('hidden');
     }
@@ -145,7 +168,7 @@ export function renderAlerts(alerts, el, drilldownEl, snapshot, options = {}) {
     item.classList.add('alert-item--selected');
 
     if (drilldownEl) {
-      const ctx = getAlertContext(alert.agentId, snapshot);
+      const ctx = getAlertContext(alert, snapshot);
       drilldownEl.innerHTML = drilldownHtml(alert, ctx);
       drilldownEl.removeAttribute('hidden');
     }
