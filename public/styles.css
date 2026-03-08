@@ -814,6 +814,20 @@ tbody tr:hover td {
     gap: 4px;
   }
 
+  .session-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .sessions-list,
+  .session-detail {
+    max-height: none;
+    min-height: 0;
+  }
+
+  .session-detail-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .attention-item-main {
     flex-direction: column;
   }
@@ -844,6 +858,10 @@ tbody tr:hover td {
 @media (max-width: 480px) {
   .cards {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .session-detail-stats {
+    grid-template-columns: 1fr;
   }
 
   h1 {
@@ -1120,10 +1138,19 @@ tr.tree-last .tree-branch::before {
 
 /* ── Session drill-down ── */
 
+.session-workspace {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
 .sessions-list {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  max-height: 520px;
+  overflow-y: auto;
 }
 
 .sessions-empty {
@@ -1148,6 +1175,11 @@ tr.tree-last .tree-branch::before {
   box-shadow: 0 2px 8px var(--shadow-hover-subtle);
 }
 
+.session-item--selected {
+  border-color: var(--warm);
+  box-shadow: 0 0 0 2px var(--border-medium);
+}
+
 .session-item-main {
   display: flex;
   align-items: center;
@@ -1166,9 +1198,26 @@ tr.tree-last .tree-branch::before {
 
 .session-item-meta {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   font-size: 12px;
   color: var(--chart-sublabel);
+}
+
+.session-item-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.session-detail {
+  min-height: 520px;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--surface-card);
 }
 
 .session-detail-head {
@@ -1184,6 +1233,71 @@ tr.tree-last .tree-branch::before {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.session-detail-meta {
+  margin-bottom: 12px;
+}
+
+.session-detail-summary {
+  display: grid;
+  gap: 10px;
+}
+
+.session-detail-summary-main {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.session-detail-summary-last {
+  font-size: 12px;
+  color: var(--chart-sublabel);
+}
+
+.session-detail-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.session-detail-stat {
+  padding: 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.session-detail-stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.62;
+}
+
+.session-detail-stat-value {
+  margin-top: 4px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.session-detail-empty {
+  padding: 14px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.session-detail-empty strong,
+.session-detail-empty p {
+  margin: 0;
+}
+
+.session-detail-empty p {
+  margin-top: 6px;
+  color: var(--chart-sublabel);
+  font-size: 13px;
 }
 
 .session-back-btn,
@@ -1205,6 +1319,10 @@ tr.tree-last .tree-branch::before {
 .session-back-btn:hover,
 .session-export-btn:hover {
   background: var(--hover-overlay);
+}
+
+.session-detail-events {
+  flex: 1 1 auto;
 }
 
 /* ── Empty / first-run state ── */
