@@ -1,7 +1,7 @@
 import { recalcWorkflow, splitWorkflow } from './lib/workflow.js';
 import { buildCardData } from './lib/cards.js';
 import { sumByRange, rangeLabel } from './lib/time-range.js';
-import { escapeHtml, statusPill, getActivityStatus, activityDotHtml, countActiveAgents } from './lib/utils.js';
+import { escapeHtml, statusPill, getActivityStatus, activityDotHtml } from './lib/utils.js';
 import { applyIncrementalEvent } from './lib/state.js';
 import { saveFilters, loadFilters, saveToggle, loadToggle } from './lib/persistence.js';
 import { connectStream, loadSnapshot } from './lib/connection.js';
@@ -70,8 +70,7 @@ function queueRender() {
   });
 }
 
-function renderCards(totals, agents = [], buckets = [], startedAt = '') {
-  const activeAgents = countActiveAgents(agents);
+function renderCards(totals, sessionRows = [], buckets = [], startedAt = '') {
   const rangeResult = sumByRange(buckets, currentRange, Date.now());
   let rangeInfo = null;
   if (rangeResult) {
@@ -79,7 +78,7 @@ function renderCards(totals, agents = [], buckets = [], startedAt = '') {
   } else if (currentRange === 'all') {
     rangeInfo = { label: rangeLabel('all', startedAt), tokenTotal: totals.tokenTotal || 0, costUsd: totals.costTotalUsd || 0 };
   }
-  const cards = buildCardData(totals, numberFmt, activeAgents, rangeInfo);
+  const cards = buildCardData(sessionRows, totals, numberFmt, rangeInfo);
   cardsRoot.innerHTML = cards
     .map(
       (c) =>
@@ -118,7 +117,7 @@ function getFilters() {
 function renderSnapshot(snapshot) {
   snapshotState = snapshot;
   const sessionRows = annotateSessionsWithState(snapshot.sessions || [], snapshot.agents || []);
-  renderCards(snapshot.totals, snapshot.agents || [], snapshot.hourlyBuckets || [], snapshot.startedAt || '');
+  renderCards(snapshot.totals, sessionRows, snapshot.hourlyBuckets || [], snapshot.startedAt || '');
   populateAgentFilter(snapshot.agents || [], agentFilter);
   renderWorkflow(snapshot.workflowProgress || recalcWorkflow(snapshot.agents));
   renderAgents(snapshot.agents || [], agentsBody, agentFilter.value);
@@ -237,7 +236,8 @@ connectStream({
 
 setInterval(() => {
   if (!snapshotState || renderQueued) return;
-  renderCards(snapshotState.totals, snapshotState.agents || [], snapshotState.hourlyBuckets || [], snapshotState.startedAt || '');
+  const intervalSessionRows = annotateSessionsWithState(snapshotState.sessions || [], snapshotState.agents || []);
+  renderCards(snapshotState.totals, intervalSessionRows, snapshotState.hourlyBuckets || [], snapshotState.startedAt || '');
   renderWorkflow(snapshotState.workflowProgress || recalcWorkflow(snapshotState.agents));
   renderAgents(snapshotState.agents || [], agentsBody, agentFilter.value);
 }, 1000);
