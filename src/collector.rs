@@ -61,12 +61,31 @@ pub fn read_delta_lines(
 
 pub fn parse_history_event(line: &str, app: &App) -> Option<Event> {
     let v: Value = serde_json::from_str(line).ok()?;
-    let text = v.get("text")?.as_str()?.to_string();
-    let ts = v.get("ts").and_then(|x| x.as_i64()).unwrap_or(0);
-    let dt = OffsetDateTime::from_unix_timestamp(ts)
-        .ok()
-        .and_then(|d| d.format(&Rfc3339).ok())
-        .unwrap_or_else(now_iso);
+    let text = v
+        .get("display")
+        .or_else(|| v.get("text"))
+        .and_then(|x| x.as_str())?
+        .to_string();
+
+    let dt = if let Some(ts_str) = v
+        .get("timestamp")
+        .and_then(|x| x.as_str())
+        .filter(|s| OffsetDateTime::parse(s, &Rfc3339).is_ok())
+    {
+        ts_str.to_string()
+    } else {
+        let ts = v.get("ts").and_then(|x| x.as_i64()).unwrap_or(0);
+        OffsetDateTime::from_unix_timestamp(ts)
+            .ok()
+            .and_then(|d| d.format(&Rfc3339).ok())
+            .unwrap_or_else(now_iso)
+    };
+
+    let session_id = v
+        .get("sessionId")
+        .or_else(|| v.get("session_id"))
+        .and_then(|x| x.as_str())
+        .unwrap_or("");
 
     Some(Event {
         id: format!("e{}", app.event_seq.fetch_add(1, Ordering::Relaxed)),
@@ -77,7 +96,7 @@ pub fn parse_history_event(line: &str, app: &App) -> Option<Event> {
         message: text.chars().take(120).collect(),
         metadata: json!({
             "source": "claude_history",
-            "sessionId": v.get("session_id").and_then(|x| x.as_str()).unwrap_or(""),
+            "sessionId": session_id,
             "textLength": text.len()
         }),
         timestamp: dt,
@@ -126,11 +145,27 @@ pub fn parse_session_line(line: &str, app: &App) -> Vec<Event> {
 
     match msg_type {
         "user" => {
-            let content = v
-                .get("message")
-                .and_then(|m| m.get("content"))
-                .and_then(|c| c.as_str())
-                .unwrap_or("");
+            let content_val = v.get("message").and_then(|m| m.get("content"));
+            let content = match content_val {
+                Some(Value::String(s)) => s.clone(),
+                Some(Value::Array(arr)) => arr
+                    .iter()
+                    .filter_map(|item| {
+                        item.get("content")
+                            .and_then(|c| match c {
+                                Value::String(s) => Some(s.as_str()),
+                                Value::Array(nested) => nested
+                                    .first()
+                                    .and_then(|x| x.get("text"))
+                                    .and_then(|t| t.as_str()),
+                                _ => None,
+                            })
+                            .or_else(|| item.get("text").and_then(|t| t.as_str()))
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" "),
+                _ => String::new(),
+            };
 
             if content.is_empty() {
                 return vec![];
@@ -277,49 +312,64 @@ pub fn parse_session_line(line: &str, app: &App) -> Vec<Event> {
 
             events
         }
+        "progress" | "queue-operation" => {
+            let label = v
+                .get("label")
+                .or_else(|| v.get("op"))
+                .and_then(|x| x.as_str())
+                .unwrap_or(msg_type);
+
+            vec![Event {
+                id: format!("e{}", app.event_seq.fetch_add(1, Ordering::Relaxed)),
+                agent_id: agent_id.clone(),
+                event: "agent_activity".to_string(),
+                status: "ok".to_string(),
+                latency_ms: None,
+                message: label.chars().take(120).collect(),
+                metadata: json!({
+                    "source": "claude_session",
+                    "sessionId": session_id,
+                    "activityType": msg_type,
+                    "isSidechain": is_sidechain,
+                }),
+                timestamp,
+                received_at: now_iso(),
+                model: String::new(),
+                is_sidechain,
+                session_id: session_id.clone(),
+                cwd: cwd.clone(),
+            }]
+        }
         _ => vec![],
+    }
+}
+
+fn walk_jsonl_recursive(dir: &Path, result: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_symlink() {
+            continue;
+        }
+        if path.is_dir() {
+            walk_jsonl_recursive(&path, result);
+        } else if path.is_file() && path.extension().map(|e| e == "jsonl").unwrap_or(false) {
+            result.push(path);
+        }
     }
 }
 
 pub fn walk_jsonl_files(dir: &Path) -> Vec<PathBuf> {
     let mut result = Vec::new();
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return result,
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return result;
     };
-
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            if let Ok(sub_entries) = std::fs::read_dir(&path) {
-                for sub_entry in sub_entries.flatten() {
-                    let sub_path = sub_entry.path();
-                    if sub_path.is_file()
-                        && sub_path.extension().map(|e| e == "jsonl").unwrap_or(false)
-                    {
-                        result.push(sub_path);
-                    } else if sub_path.is_dir()
-                        && sub_path
-                            .file_name()
-                            .map(|n| n == "subagents")
-                            .unwrap_or(false)
-                    {
-                        if let Ok(agent_entries) = std::fs::read_dir(&sub_path) {
-                            for agent_entry in agent_entries.flatten() {
-                                let agent_path = agent_entry.path();
-                                if agent_path.is_file()
-                                    && agent_path
-                                        .extension()
-                                        .map(|e| e == "jsonl")
-                                        .unwrap_or(false)
-                                {
-                                    result.push(agent_path);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            walk_jsonl_recursive(&path, &mut result);
         }
     }
     result
@@ -950,6 +1000,130 @@ mod tests {
         let line = r#"{"type":"user","message":{"content":"hi"},"sessionId":"s1","timestamp":"2025-01-01T00:00:00Z"}"#;
         let events = parse_session_line(line, &app);
         assert_eq!(events[0].cwd, "");
+    }
+
+    #[test]
+    fn test_parse_session_line_progress_event() {
+        let app = make_test_app();
+        let line = r#"{"type":"progress","label":"Reading file...","sessionId":"s1","timestamp":"2025-01-01T00:00:00Z"}"#;
+        let events = parse_session_line(line, &app);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event, "agent_activity");
+        assert_eq!(events[0].message, "Reading file...");
+    }
+
+    #[test]
+    fn test_parse_session_line_queue_operation_event() {
+        let app = make_test_app();
+        let line = r#"{"type":"queue-operation","op":"enqueue","sessionId":"s1","timestamp":"2025-01-01T00:00:00Z"}"#;
+        let events = parse_session_line(line, &app);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event, "agent_activity");
+        assert_eq!(events[0].message, "enqueue");
+    }
+
+    #[test]
+    fn test_parse_session_line_progress_no_label_uses_type() {
+        let app = make_test_app();
+        let line = r#"{"type":"progress","sessionId":"s1","timestamp":"2025-01-01T00:00:00Z"}"#;
+        let events = parse_session_line(line, &app);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].message, "progress");
+    }
+
+    #[test]
+    fn test_parse_session_line_user_array_content() {
+        let app = make_test_app();
+        let line = r#"{"type":"user","message":{"content":[{"type":"tool_result","content":"result text"},{"type":"text","text":"follow up"}]},"sessionId":"s1","timestamp":"2025-01-01T00:00:00Z"}"#;
+        let events = parse_session_line(line, &app);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event, "user_message");
+        assert!(events[0].message.contains("result text"));
+        assert!(events[0].message.contains("follow up"));
+    }
+
+    #[test]
+    fn test_parse_session_line_user_tool_result_nested_array_content() {
+        let app = make_test_app();
+        let line = r#"{"type":"user","message":{"content":[{"type":"tool_result","content":[{"type":"text","text":"nested output"}]}]},"sessionId":"s1","timestamp":"2025-01-01T00:00:00Z"}"#;
+        let events = parse_session_line(line, &app);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event, "user_message");
+        assert!(events[0].message.contains("nested output"));
+    }
+
+    #[test]
+    fn test_parse_session_line_user_array_content_empty_skipped() {
+        let app = make_test_app();
+        let line = r#"{"type":"user","message":{"content":[]},"sessionId":"s1","timestamp":"2025-01-01T00:00:00Z"}"#;
+        let events = parse_session_line(line, &app);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_parse_history_event_invalid_timestamp_falls_back() {
+        let app = make_test_app();
+        let line = r#"{"display":"msg","timestamp":"not-a-date","sessionId":"s1"}"#;
+        let evt = parse_history_event(line, &app).unwrap();
+        // invalid timestamp should fall back to now_iso(), not use "not-a-date"
+        assert_ne!(evt.timestamp, "not-a-date");
+    }
+
+    #[test]
+    fn test_parse_history_event_new_schema() {
+        let app = make_test_app();
+        let line =
+            r#"{"display":"new format msg","timestamp":"2025-06-01T12:00:00Z","sessionId":"s2"}"#;
+        let evt = parse_history_event(line, &app);
+        assert!(evt.is_some());
+        let evt = evt.unwrap();
+        assert_eq!(evt.message, "new format msg");
+        assert_eq!(evt.timestamp, "2025-06-01T12:00:00Z");
+        assert_eq!(evt.metadata["sessionId"].as_str().unwrap(), "s2");
+    }
+
+    #[test]
+    fn test_parse_history_event_legacy_schema_still_works() {
+        let app = make_test_app();
+        let line = r#"{"text":"legacy msg","ts":1700000000,"session_id":"s1"}"#;
+        let evt = parse_history_event(line, &app);
+        assert!(evt.is_some());
+        let evt = evt.unwrap();
+        assert_eq!(evt.message, "legacy msg");
+        assert_eq!(evt.metadata["sessionId"].as_str().unwrap(), "s1");
+    }
+
+    #[test]
+    fn test_walk_jsonl_files_ignores_symlinks() {
+        let dir = unique_tmp_dir("walk_symlink");
+        let proj = dir.join("proj");
+        let session = proj.join("sess");
+        std::fs::create_dir_all(&session).unwrap();
+        File::create(session.join("lead.jsonl")).unwrap();
+
+        // create symlink loop: proj/sess/loop -> proj
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&proj, session.join("loop")).unwrap();
+            let files = walk_jsonl_files(&dir);
+            // should find lead.jsonl but not infinite loop
+            assert_eq!(files.len(), 1);
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_walk_jsonl_files_deep_nesting() {
+        let dir = unique_tmp_dir("walk_deep");
+        let deep = dir.join("proj").join("sess").join("sub1").join("sub2");
+        std::fs::create_dir_all(&deep).unwrap();
+        File::create(deep.join("agent.jsonl")).unwrap();
+        File::create(dir.join("proj").join("sess").join("lead.jsonl")).unwrap();
+
+        let files = walk_jsonl_files(&dir);
+        assert_eq!(files.len(), 2);
+        assert!(files.iter().all(|p| p.extension().unwrap() == "jsonl"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
