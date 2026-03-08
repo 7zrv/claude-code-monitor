@@ -12,6 +12,7 @@ import { renderAgents, populateAgentFilter } from './lib/renders/agents.js';
 import { renderAlerts } from './lib/renders/alerts.js';
 import { renderTimeline } from './lib/renders/timeline.js';
 import { renderSessionsList, renderSessionDetail, fetchSessionEvents, getSessionExportAttrs } from './lib/renders/sessions.js';
+import { isEmptySnapshot, renderEmptyState } from './lib/empty-state.js';
 
 const cardsRoot = document.getElementById('cards');
 const workflowRoot = document.getElementById('workflow');
@@ -49,6 +50,7 @@ const chartEls = {
 const workflowToggle = document.getElementById('workflowToggle');
 const workflowCompletedRoot = document.getElementById('workflowCompleted');
 
+const emptyStateEl = document.getElementById('emptyState');
 const timeRangeBar = document.getElementById('timeRangeBar');
 
 const numberFmt = new Intl.NumberFormat('ko-KR');
@@ -117,6 +119,11 @@ function getFilters() {
 
 function renderSnapshot(snapshot) {
   snapshotState = snapshot;
+  const empty = isEmptySnapshot(snapshot);
+  if (emptyStateEl) {
+    emptyStateEl.hidden = !empty;
+    if (empty) renderEmptyState(emptyStateEl);
+  }
   const sessionRows = annotateSessionsWithState(snapshot.sessions || [], snapshot.agents || []);
   renderCards(snapshot.totals, sessionRows, snapshot.hourlyBuckets || [], snapshot.startedAt || '');
   populateAgentFilter(snapshot.agents || [], agentFilter);

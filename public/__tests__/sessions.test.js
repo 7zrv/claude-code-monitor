@@ -23,7 +23,12 @@ describe('renderSessionsList', () => {
 
   it('renders empty message when no sessions', () => {
     renderSessionsList([], root, () => {});
-    assert.ok(root.innerHTML.includes('세션 없음'));
+    assert.ok(root.innerHTML.includes('아직 세션이 없습니다'));
+  });
+
+  it('shows collection path guidance in empty sessions state', () => {
+    renderSessionsList([], root, () => {});
+    assert.ok(root.innerHTML.includes('~/.claude/projects/'));
   });
 
   it('includes session cost and token info', () => {
