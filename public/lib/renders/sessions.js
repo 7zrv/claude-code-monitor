@@ -2,7 +2,7 @@ import { escapeHtml, relativeTime, statusPill } from '../utils.js';
 
 export function renderSessionsList(sessions, root, onSelect) {
   if (!sessions || sessions.length === 0) {
-    root.innerHTML = '<p class="sessions-empty">세션 없음</p>';
+    root.innerHTML = `<p class="sessions-empty">아직 세션이 없습니다. Claude Code를 실행하면 세션이 여기에 표시됩니다.<br><small>수집 경로: <code>~/.claude/projects/</code></small></p>`;
     return;
   }
 
