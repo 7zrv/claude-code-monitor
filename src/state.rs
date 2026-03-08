@@ -289,6 +289,14 @@ pub fn append_event(app: &App, evt: Event) {
                     state.hourly_buckets.remove(0);
                 }
             }
+
+            if let Some(db_arc) = &app.db {
+                if let Ok(db) = db_arc.lock() {
+                    if let Err(e) = db.upsert_bucket(hour_key, token_total, cost_delta) {
+                        eprintln!("[db] upsert_bucket error: {e}");
+                    }
+                }
+            }
         }
 
         if evt.event == "tool_call" {
@@ -414,6 +422,7 @@ mod tests {
             sse_clients: Arc::new(Mutex::new(Vec::new())),
             event_seq: Arc::new(AtomicU64::new(1)),
             public_dir: Arc::new(PathBuf::from("public")),
+            db: None,
         }
     }
 

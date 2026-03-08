@@ -6,12 +6,15 @@ use std::sync::atomic::AtomicU64;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
+use crate::db::Db;
+
 #[derive(Clone)]
 pub struct App {
     pub state: Arc<Mutex<State>>,
     pub sse_clients: Arc<Mutex<Vec<Sender<String>>>>,
     pub event_seq: Arc<AtomicU64>,
     pub public_dir: Arc<PathBuf>,
+    pub db: Option<Arc<Mutex<Db>>>,
 }
 
 #[derive(Clone, Serialize)]
