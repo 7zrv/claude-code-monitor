@@ -7,7 +7,7 @@ use std::time::Duration;
 
 #[cfg(test)]
 use crate::state::broadcast_sse;
-use crate::state::{build_snapshot, get_session_events};
+use crate::state::{build_snapshot, get_session_events, get_session_export};
 use crate::types::{App, ParsedRequest};
 use crate::utils::{bytes_response, content_type_for, json_response, now_iso};
 
@@ -119,6 +119,10 @@ pub fn spawn_sse_sweeper(app: App) {
     });
 }
 
+fn session_route_id<'a>(path: &'a str, suffix: &str) -> Option<&'a str> {
+    path.strip_prefix("/api/sessions/")?.strip_suffix(suffix)
+}
+
 pub fn handle_client(mut stream: TcpStream, app: App) {
     let req = match parse_request(&mut stream) {
         Some(r) => r,
@@ -151,14 +155,33 @@ pub fn handle_client(mut stream: TcpStream, app: App) {
             };
             let _ = stream.write_all(&json_response("200 OK", &body));
         }
-        ("GET", path) if path.starts_with("/api/sessions/") && path.ends_with("/events") => {
-            let session_id = &path["/api/sessions/".len()..path.len() - "/events".len()];
+        ("GET", path) if session_route_id(path, "/events").is_some() => {
+            let session_id = session_route_id(path, "/events").unwrap_or_default();
             let body = {
                 let state = app.state.lock().unwrap_or_else(|e| e.into_inner());
                 let events = get_session_events(&state, session_id);
                 serde_json::to_string(&events).unwrap_or_else(|_| "[]".to_string())
             };
             let _ = stream.write_all(&json_response("200 OK", &body));
+        }
+        ("GET", path) if session_route_id(path, "/export").is_some() => {
+            let session_id = session_route_id(path, "/export").unwrap_or_default();
+            let export = {
+                let state = app.state.lock().unwrap_or_else(|e| e.into_inner());
+                get_session_export(&state, session_id)
+            };
+            match export {
+                Some(export) => {
+                    let body = serde_json::to_string(&export).unwrap_or_else(|_| "{}".to_string());
+                    let _ = stream.write_all(&json_response("200 OK", &body));
+                }
+                None => {
+                    let _ = stream.write_all(&json_response(
+                        "404 Not Found",
+                        &json!({ "error": "Session not found" }).to_string(),
+                    ));
+                }
+            }
         }
         ("GET", "/api/stream") => {
             let snapshot = {
@@ -231,6 +254,10 @@ mod tests {
         let mut buf = Vec::new();
         let _ = stream.read_to_end(&mut buf);
         String::from_utf8_lossy(&buf).to_string()
+    }
+
+    fn response_body(resp: &str) -> &str {
+        resp.split("\r\n\r\n").nth(1).unwrap_or("")
     }
 
     fn unique_tmp_dir(name: &str) -> PathBuf {
@@ -449,6 +476,91 @@ mod tests {
         handle.join().unwrap();
         assert!(resp.contains("200 OK"));
         assert!(resp.contains("[]"));
+    }
+
+    #[test]
+    fn test_handle_client_session_export_200() {
+        use crate::state::append_event;
+        use crate::types::Event;
+
+        let app = make_test_app();
+        append_event(
+            &app,
+            Event {
+                id: "e1".to_string(),
+                agent_id: "a1".to_string(),
+                event: "token_usage".to_string(),
+                status: "ok".to_string(),
+                latency_ms: None,
+                message: "tokens +200".to_string(),
+                metadata: serde_json::json!({
+                    "tokenUsage": { "totalTokens": 200 }
+                }),
+                timestamp: "2025-01-01T00:00:00Z".to_string(),
+                received_at: "2025-01-01T00:00:00Z".to_string(),
+                model: String::new(),
+                is_sidechain: false,
+                session_id: "sess-abc".to_string(),
+                cwd: String::new(),
+            },
+        );
+        append_event(
+            &app,
+            Event {
+                id: "e2".to_string(),
+                agent_id: "a2".to_string(),
+                event: "cost_update".to_string(),
+                status: "ok".to_string(),
+                latency_ms: None,
+                message: "cost +0.03".to_string(),
+                metadata: serde_json::json!({
+                    "costDelta": 0.03
+                }),
+                timestamp: "2025-01-01T00:00:01Z".to_string(),
+                received_at: "2025-01-01T00:00:01Z".to_string(),
+                model: String::new(),
+                is_sidechain: false,
+                session_id: "sess-abc".to_string(),
+                cwd: String::new(),
+            },
+        );
+
+        let (addr, handle) = spawn_test_server(app);
+        let resp = http_request(
+            &addr,
+            "GET /api/sessions/sess-abc/export HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        );
+        handle.join().unwrap();
+
+        assert!(resp.contains("200 OK"));
+
+        let body: serde_json::Value = serde_json::from_str(response_body(&resp)).unwrap();
+        assert_eq!(body["summary"]["sessionId"], "sess-abc");
+        assert_eq!(body["summary"]["tokenTotal"], 200);
+        assert_eq!(
+            body["events"].as_array().map(|events| events.len()),
+            Some(2)
+        );
+        assert_eq!(
+            body["summary"]["agentIds"].as_array().map(|ids| ids.len()),
+            Some(2)
+        );
+        assert!(body["summary"]["costUsd"].as_f64().unwrap_or_default() > 0.0);
+        assert!(body["exportedAt"].as_str().is_some());
+    }
+
+    #[test]
+    fn test_handle_client_session_export_404_for_unknown() {
+        let (addr, handle) = spawn_test_server(make_test_app());
+        let resp = http_request(
+            &addr,
+            "GET /api/sessions/nonexistent/export HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        );
+        handle.join().unwrap();
+
+        assert!(resp.contains("404 Not Found"));
+        let body: serde_json::Value = serde_json::from_str(response_body(&resp)).unwrap();
+        assert_eq!(body["error"], "Session not found");
     }
 
     #[test]

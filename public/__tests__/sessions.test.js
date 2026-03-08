@@ -1,6 +1,6 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { renderSessionsList, renderSessionDetail } from '../lib/renders/sessions.js';
+import { getSessionExportAttrs, renderSessionsList, renderSessionDetail } from '../lib/renders/sessions.js';
 
 function makeRoot() {
   return { innerHTML: '', dataset: {} };
@@ -55,5 +55,18 @@ describe('renderSessionDetail', () => {
   it('renders empty message when no events', () => {
     renderSessionDetail([], root);
     assert.ok(root.innerHTML.includes('이벤트 없음'));
+  });
+});
+
+describe('getSessionExportAttrs', () => {
+  it('builds a same-origin export link and safe filename', () => {
+    const attrs = getSessionExportAttrs('sess 1/alpha');
+    assert.equal(attrs.href, '/api/sessions/sess%201%2Falpha/export');
+    assert.equal(attrs.download, 'session-sess_1_alpha.json');
+  });
+
+  it('falls back to a stable filename when session id is blank', () => {
+    const attrs = getSessionExportAttrs('   ');
+    assert.equal(attrs.download, 'session-detail.json');
   });
 });
