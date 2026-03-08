@@ -15,6 +15,7 @@ Claude Code 세션의 실시간 모니터링 대시보드. Rust 백엔드 + Elec
 - 대시보드: agent / workflow / source / alerts / 최근 이벤트
 - 토큰 지표: 총 토큰(`totals.tokenTotal`) + 에이전트별 토큰(`agents[].tokenTotal`)
 - 비용 지표: 총 비용(`totals.costTotalUsd`) 소수점 4자리 표시
+- Alerts 패널에서 경고 횟수, 비용 spike, 토큰 spike 임계값을 로컬 기준으로 조정 가능하며 저장된 값은 브라우저 `localStorage`에서 기본값을 덮어씁니다.
 
 ## 실행
 

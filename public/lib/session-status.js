@@ -1,7 +1,7 @@
+import { DEFAULT_ALERT_RULES, sanitizeAlertRules } from './alert-rules.js';
+
 const ACTIVE_WINDOW_MS = 30_000;
 const COMPLETED_WINDOW_MS = 120_000;
-const COST_SPIKE_USD_THRESHOLD = 0.5;
-const COST_SPIKE_TOKEN_THRESHOLD = 20_000;
 
 const NEEDS_ATTENTION_SCORES = {
   failed: 400,
@@ -41,17 +41,28 @@ function orderedReasons(reasons = []) {
   return result;
 }
 
-export function deriveRiskSignals(row = {}, now = Date.now()) {
+function resolveRiskInputs(nowOrRules = Date.now(), maybeRules) {
+  if (typeof nowOrRules === 'number' && Number.isFinite(nowOrRules)) {
+    return { now: nowOrRules, rules: sanitizeAlertRules(maybeRules) };
+  }
+  if (nowOrRules && typeof nowOrRules === 'object') {
+    return { now: Date.now(), rules: sanitizeAlertRules(nowOrRules) };
+  }
+  return { now: Date.now(), rules: sanitizeAlertRules(maybeRules) };
+}
+
+function deriveRiskSignalsWithRules(row = {}, now = Date.now(), rules = DEFAULT_ALERT_RULES) {
   const sessionState = row.sessionState || deriveSessionState(row, now);
   const warning = Number(row.warning) || 0;
   const costUsd = Number(row.costUsd) || 0;
   const tokenTotal = Number(row.tokenTotal) || 0;
-  const isCostSpike = costUsd >= COST_SPIKE_USD_THRESHOLD || tokenTotal >= COST_SPIKE_TOKEN_THRESHOLD;
+  const warningCountThreshold = rules.warningCountThreshold;
+  const isCostSpike = costUsd >= rules.costUsdThreshold || tokenTotal >= rules.tokenTotalThreshold;
 
   const reasons = [];
   if (sessionState === 'failed') reasons.push('failed');
   if (sessionState === 'stuck') reasons.push('stuck');
-  if (warning > 0) reasons.push('warning');
+  if (warning >= warningCountThreshold) reasons.push('warning');
   if (isCostSpike) reasons.push('cost_spike');
 
   const needsAttentionReasons = orderedReasons(reasons);
@@ -65,6 +76,11 @@ export function deriveRiskSignals(row = {}, now = Date.now()) {
     needsAttentionReasons,
     isCostSpike
   };
+}
+
+export function deriveRiskSignals(row = {}, nowOrRules = Date.now(), maybeRules) {
+  const { now, rules } = resolveRiskInputs(nowOrRules, maybeRules);
+  return deriveRiskSignalsWithRules(row, now, rules);
 }
 
 export function toWorkflowStatus(sessionState) {
@@ -82,7 +98,8 @@ export function toWorkflowStatus(sessionState) {
   }
 }
 
-export function annotateSessionsWithState(sessions = [], agents = [], now = Date.now()) {
+export function annotateSessionsWithState(sessions = [], agents = [], nowOrRules = Date.now(), maybeRules) {
+  const { now, rules } = resolveRiskInputs(nowOrRules, maybeRules);
   const totalsBySession = new Map();
 
   for (const agent of agents) {
@@ -106,7 +123,7 @@ export function annotateSessionsWithState(sessions = [], agents = [], now = Date
       },
       now
     );
-    const riskSignals = deriveRiskSignals(
+    const riskSignals = deriveRiskSignalsWithRules(
       {
         ...session,
         total: totals.total,
@@ -114,7 +131,8 @@ export function annotateSessionsWithState(sessions = [], agents = [], now = Date
         error: totals.error,
         sessionState: derivedState
       },
-      now
+      now,
+      rules
     );
     return {
       ...session,
