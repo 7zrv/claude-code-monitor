@@ -1078,6 +1078,30 @@ tr.tree-last .tree-branch::before {
   font-size: 13px;
 }
 
+.drilldown-session-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.drilldown-session-open {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--warm-text);
+  cursor: pointer;
+  padding: 4px 10px;
+  font-size: 13px;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.drilldown-session-open:hover {
+  background: var(--hover-overlay);
+  border-color: var(--warm);
+}
+
 .drilldown-event {
   display: grid;
   grid-template-columns: auto auto 1fr auto;
