@@ -220,12 +220,17 @@ main {
 .panel-head {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 8px;
 }
 
 .panel-head h2 {
   margin-right: auto;
+}
+
+.table-scroll {
+  overflow-x: auto;
 }
 
 select {
@@ -413,6 +418,10 @@ table {
   width: 100%;
   border-collapse: collapse;
   font-size: 14px;
+}
+
+.agents-table {
+  min-width: 760px;
 }
 
 th,
@@ -704,6 +713,14 @@ tbody tr:hover td {
   .cards {
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   }
+
+  .agents-table {
+    min-width: 700px;
+  }
+
+  .tree-session-meta {
+    width: 100%;
+  }
 }
 
 @media (max-width: 480px) {
@@ -722,6 +739,14 @@ tbody tr:hover td {
   input[type='search'] {
     width: 100%;
     min-width: unset;
+  }
+
+  .panel-head--agents select {
+    width: 100%;
+  }
+
+  .agents-table {
+    min-width: 640px;
   }
 }
 
@@ -759,15 +784,71 @@ tr.tree-child td:first-child {
   padding-left: 28px;
 }
 
+.agent-name-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.agent-name-cell .activity-dot {
+  margin-right: 0;
+}
+
+.agent-name-labels {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.tree-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--warm-text);
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.tree-toggle:hover {
+  background: var(--hover-overlay);
+  border-color: var(--border);
+}
+
+.tree-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.tree-toggle-icon {
+  font-size: 11px;
+  line-height: 1;
+}
+
 .tree-branch::before {
   content: "\251C\2500";
   color: var(--border);
-  margin-right: 4px;
   font-size: 12px;
 }
 
 tr.tree-last .tree-branch::before {
   content: "\2514\2500";
+}
+
+.tree-session-meta {
+  font-size: 11px;
+  color: var(--chart-sublabel);
+  opacity: 0.78;
+  white-space: nowrap;
 }
 
 .model-badge {

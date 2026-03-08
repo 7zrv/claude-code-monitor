@@ -1,7 +1,50 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { resetDisplayNames } from '../lib/agent-display.js';
-import { agentRowHtml } from '../lib/renders/agents.js';
+import { agentRowHtml, renderAgents, toggleAgentTreeNode } from '../lib/renders/agents.js';
+
+function makeRoot() {
+  return { innerHTML: '', dataset: {} };
+}
+
+const treeAgents = [
+  {
+    agentId: 'lead-abcdef12',
+    sessionId: 'abcdef1234567890',
+    isSidechain: false,
+    model: 'claude-opus-4-6',
+    lastSeen: '2025-01-01T00:00:00Z',
+    lastEvent: 'LeadRun',
+    tokenTotal: 1200,
+    costUsd: 0.22,
+    error: 0,
+    latencyMs: 30
+  },
+  {
+    agentId: 'agent-abc',
+    sessionId: 'abcdef1234567890',
+    isSidechain: true,
+    model: 'claude-haiku-4-5',
+    lastSeen: '2025-01-01T00:00:01Z',
+    lastEvent: 'ChildRun',
+    tokenTotal: 200,
+    costUsd: 0.02,
+    error: 0,
+    latencyMs: 20
+  },
+  {
+    agentId: 'solo-agent',
+    sessionId: '',
+    isSidechain: false,
+    model: 'claude-sonnet-4-6',
+    lastSeen: '2025-01-01T00:00:02Z',
+    lastEvent: 'SoloRun',
+    tokenTotal: 500,
+    costUsd: 0.05,
+    error: 0,
+    latencyMs: 15
+  }
+];
 
 describe('agentRowHtml', () => {
   it('renders a root agent row with cost and relative time', () => {
@@ -241,5 +284,44 @@ describe('agentRowHtml', () => {
     // should have exactly 7 <td> columns
     const tdCount = (html.match(/<td/g) || []).length;
     assert.equal(tdCount, 7);
+  });
+});
+
+describe('renderAgents', () => {
+  it('renders a collapsible tree root for session leads and keeps standalone agents visible', () => {
+    resetDisplayNames();
+    const root = makeRoot();
+    renderAgents(treeAgents, root, 'all');
+
+    assert.ok(root.innerHTML.includes('class="tree-toggle"'));
+    assert.ok(root.innerHTML.includes('aria-expanded="true"'));
+    assert.ok(root.innerHTML.includes('세션 abcdef12... · 하위 1개'));
+    assert.ok(root.innerHTML.includes('solo-agent'));
+    assert.ok(root.innerHTML.includes('data-tree-parent="abcdef1234567890"'));
+    assert.equal((root.innerHTML.match(/\shidden(?=[\s>])/g) || []).length, 0);
+  });
+
+  it('hides child rows for collapsed tree keys and prunes stale keys', () => {
+    resetDisplayNames();
+    const root = makeRoot();
+    root.dataset.collapsedTreeKeys = JSON.stringify(['abcdef1234567890', 'stale-key']);
+
+    renderAgents(treeAgents, root, 'all');
+
+    assert.equal(root.dataset.collapsedTreeKeys, JSON.stringify(['abcdef1234567890']));
+    assert.ok(root.innerHTML.includes('aria-expanded="false"'));
+    assert.equal((root.innerHTML.match(/\shidden(?=[\s>])/g) || []).length, 1);
+  });
+});
+
+describe('toggleAgentTreeNode', () => {
+  it('toggles collapsed tree state on the render root dataset', () => {
+    const root = makeRoot();
+
+    toggleAgentTreeNode(root, 'abcdef1234567890');
+    assert.equal(root.dataset.collapsedTreeKeys, JSON.stringify(['abcdef1234567890']));
+
+    toggleAgentTreeNode(root, 'abcdef1234567890');
+    assert.equal(root.dataset.collapsedTreeKeys, undefined);
   });
 });

@@ -86,27 +86,29 @@
       </section>
 
       <section class="panel">
-        <div class="panel-head">
+        <div class="panel-head panel-head--agents">
           <h2>에이전트</h2>
           <label for="agentFilter">필터</label>
           <select id="agentFilter">
             <option value="all">all</option>
           </select>
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th>Agent</th>
-              <th>Last Seen</th>
-              <th>Error</th>
-              <th>Tokens</th>
-              <th>Cost</th>
-              <th>Last Event</th>
-              <th>Latency</th>
-            </tr>
-          </thead>
-          <tbody id="agentsBody"></tbody>
-        </table>
+        <div class="table-scroll agents-table-scroll">
+          <table class="agents-table">
+            <thead>
+              <tr>
+                <th>Agent</th>
+                <th>Last Seen</th>
+                <th>Error</th>
+                <th>Tokens</th>
+                <th>Cost</th>
+                <th>Last Event</th>
+                <th>Latency</th>
+              </tr>
+            </thead>
+            <tbody id="agentsBody"></tbody>
+          </table>
+        </div>
       </section>
 
       <section class="panel">
