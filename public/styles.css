@@ -339,6 +339,11 @@ main {
   margin-right: auto;
 }
 
+.panel-head-note {
+  font-size: 12px;
+  color: var(--chart-sublabel);
+}
+
 .table-scroll {
   overflow-x: auto;
 }
