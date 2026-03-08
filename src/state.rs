@@ -9,9 +9,31 @@ use crate::types::{
 };
 use crate::utils::now_iso;
 
+const ACTIVE_WINDOW_SECS: i64 = 30;
+const STUCK_WINDOW_SECS: i64 = 120;
+const COMPLETED_FALLBACK_WINDOW_SECS: i64 = 900;
+
 fn elapsed_secs_from(last_seen: &str, now: OffsetDateTime) -> Option<i64> {
     let parsed = OffsetDateTime::parse(last_seen, &Rfc3339).ok()?;
     Some((now - parsed).whole_seconds())
+}
+
+fn is_terminal_event_hint(last_event: &str) -> bool {
+    matches!(
+        last_event.trim().to_ascii_lowercase().replace([' ', '-'], "_").as_str(),
+        "done"
+            | "complete"
+            | "completed"
+            | "finish"
+            | "finished"
+            | "session_complete"
+            | "session_completed"
+            | "session_end"
+            | "stop"
+            | "stopped"
+            | "exit"
+            | "exited"
+    )
 }
 
 pub fn workflow_row(state: &State, role_id: &str) -> WorkflowRow {
@@ -24,14 +46,17 @@ fn workflow_row_at(state: &State, role_id: &str, now: OffsetDateTime) -> Workflo
 
         let status = if row.error > 0 {
             "blocked"
-        } else if row.warning > 0 {
-            "at-risk"
+        } else if row.total == 0 {
+            "idle"
         } else {
             match elapsed {
-                Some(s) if s < 30 && row.total > 0 => "running",
-                Some(s) if s >= 120 => "completed",
+                Some(s) if s < ACTIVE_WINDOW_SECS => "running",
+                Some(s) if is_terminal_event_hint(&row.last_event) && s >= STUCK_WINDOW_SECS => {
+                    "completed"
+                }
+                Some(s) if s >= COMPLETED_FALLBACK_WINDOW_SECS => "completed",
+                Some(s) if s >= STUCK_WINDOW_SECS => "at-risk",
                 Some(_) => "idle",
-                None if row.total > 0 => "running",
                 None => "idle",
             }
         };
@@ -530,9 +555,10 @@ mod tests {
                 display_name_from_user: false,
             },
         );
-        // at-risk는 시간 무관
-        let row = workflow_row(&state, "agent-1");
-        assert_eq!(row.status, "at-risk");
+        // warning만으로는 at-risk가 아니다
+        let now = parse_time("2025-01-01T00:01:00Z");
+        let row = workflow_row_at(&state, "agent-1", now);
+        assert_eq!(row.status, "idle");
     }
 
     #[test]
@@ -565,7 +591,7 @@ mod tests {
     }
 
     #[test]
-    fn test_workflow_row_completed_when_zero_total() {
+    fn test_workflow_row_idle_when_zero_total() {
         let mut state = State::default();
         let last_seen = "2025-01-01T00:00:00Z";
         state.by_agent.insert(
@@ -589,15 +615,15 @@ mod tests {
                 display_name_from_user: false,
             },
         );
-        // 3분 경과, total=0 → completed
+        // 3분 경과해도 total=0이면 idle
         let now = parse_time(last_seen) + time::Duration::seconds(180);
         let row = workflow_row_at(&state, "agent-1", now);
         assert!(row.active);
-        assert_eq!(row.status, "completed");
+        assert_eq!(row.status, "idle");
     }
 
     #[test]
-    fn test_workflow_row_completed_when_last_seen_over_2min() {
+    fn test_workflow_row_completed_when_terminal_hint_over_2min() {
         let mut state = State::default();
         let last_seen = "2025-01-01T00:00:00Z";
         state.by_agent.insert(
@@ -621,8 +647,68 @@ mod tests {
                 display_name_from_user: false,
             },
         );
-        // 3분 경과 → completed
+        // 3분 경과 + terminal hint → completed
         let now = parse_time(last_seen) + time::Duration::seconds(180);
+        let row = workflow_row_at(&state, "agent-1", now);
+        assert_eq!(row.status, "completed");
+    }
+
+    #[test]
+    fn test_workflow_row_at_risk_when_last_seen_over_2min_without_terminal_hint() {
+        let mut state = State::default();
+        let last_seen = "2025-01-01T00:00:00Z";
+        state.by_agent.insert(
+            "agent-1".to_string(),
+            AgentRow {
+                agent_id: "agent-1".to_string(),
+                last_seen: last_seen.to_string(),
+                total: 5,
+                ok: 5,
+                warning: 0,
+                error: 0,
+                token_total: 0,
+                cost_usd: 0.0,
+                last_event: "assistant_message".to_string(),
+                latency_ms: None,
+                model: String::new(),
+                is_sidechain: false,
+                session_id: String::new(),
+                tool_use_counts: std::collections::HashMap::new(),
+                display_name: String::new(),
+                display_name_from_user: false,
+            },
+        );
+        let now = parse_time(last_seen) + time::Duration::seconds(180);
+        let row = workflow_row_at(&state, "agent-1", now);
+        assert_eq!(row.status, "at-risk");
+    }
+
+    #[test]
+    fn test_workflow_row_completed_after_long_fallback_window() {
+        let mut state = State::default();
+        let last_seen = "2025-01-01T00:00:00Z";
+        state.by_agent.insert(
+            "agent-1".to_string(),
+            AgentRow {
+                agent_id: "agent-1".to_string(),
+                last_seen: last_seen.to_string(),
+                total: 5,
+                ok: 5,
+                warning: 0,
+                error: 0,
+                token_total: 0,
+                cost_usd: 0.0,
+                last_event: "assistant_message".to_string(),
+                latency_ms: None,
+                model: String::new(),
+                is_sidechain: false,
+                session_id: String::new(),
+                tool_use_counts: std::collections::HashMap::new(),
+                display_name: String::new(),
+                display_name_from_user: false,
+            },
+        );
+        let now = parse_time(last_seen) + time::Duration::seconds(960);
         let row = workflow_row_at(&state, "agent-1", now);
         assert_eq!(row.status, "completed");
     }
@@ -721,7 +807,7 @@ mod tests {
     }
 
     #[test]
-    fn test_workflow_row_at_risk_overrides_time() {
+    fn test_workflow_row_completed_with_warning_and_terminal_hint() {
         let mut state = State::default();
         let last_seen = "2025-01-01T00:00:00Z";
         state.by_agent.insert(
@@ -735,7 +821,7 @@ mod tests {
                 error: 0,
                 token_total: 0,
                 cost_usd: 0.0,
-                last_event: "warn".to_string(),
+                last_event: "done".to_string(),
                 latency_ms: None,
                 model: String::new(),
                 is_sidechain: false,
@@ -745,10 +831,10 @@ mod tests {
                 display_name_from_user: false,
             },
         );
-        // 10분 경과해도 warning이면 at-risk
+        // warning이 있어도 terminal hint + 장기 무응답이면 completed
         let now = parse_time(last_seen) + time::Duration::seconds(600);
         let row = workflow_row_at(&state, "agent-1", now);
-        assert_eq!(row.status, "at-risk");
+        assert_eq!(row.status, "completed");
     }
 
     #[test]

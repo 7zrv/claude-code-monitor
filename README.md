@@ -12,7 +12,17 @@ Claude Code 세션의 실시간 모니터링 대시보드. Rust 백엔드 + Elec
 - `GET /api/stream` SSE 실시간 스트림
 - `GET /api/alerts` 경고/오류 알림
 - `~/.claude/history.jsonl`, `~/.claude/projects/` 자동 수집 (내장 컬렉터)
-- 대시보드: agent / workflow / source / alerts / 최근 이벤트
+- 세션 중심 대시보드
+  - 상단 요약 카드
+  - `Needs Attention`
+  - `Sessions Workspace`
+  - `Alerts`
+  - `Workflow`
+  - `에이전트` 참고 표
+  - 세션 타임라인 / 분석 차트 / 최근 이벤트 로그
+- 세션 상태 모델: `active / idle / stuck / completed / failed`
+  - `warning`은 attention reason으로 유지되고, `stuck`은 2분 이상 무응답일 때 표시됩니다.
+  - `completed`는 terminal hint가 있거나 15분 이상 장기 무응답일 때만 보수적으로 판정합니다.
 - 토큰 지표: 총 토큰(`totals.tokenTotal`) + 에이전트별 토큰(`agents[].tokenTotal`)
 - 비용 지표: 총 비용(`totals.costTotalUsd`) 소수점 4자리 표시
 - Alerts 패널에서 경고 횟수, 비용 spike, 토큰 spike 임계값을 로컬 기준으로 조정 가능하며 저장된 값은 브라우저 `localStorage`에서 기본값을 덮어씁니다.
