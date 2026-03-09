@@ -4,6 +4,47 @@ import { annotateSessionsWithState } from '../lib/session-status.js';
 import { buildDerivedSessionAlerts, mergeAlertsForPanel } from '../lib/derived-alerts.js';
 
 describe('buildDerivedSessionAlerts', () => {
+  it('surfaces stuck and failed session state reasons as derived alerts', () => {
+    const alerts = buildDerivedSessionAlerts([
+      {
+        sessionId: 'sess-failed',
+        lastSeen: '2026-01-01T00:00:20Z',
+        error: 2,
+        needsAttentionReasons: ['failed']
+      },
+      {
+        sessionId: 'sess-stuck',
+        lastSeen: '2026-01-01T00:00:10Z',
+        needsAttentionReasons: ['stuck', 'warning']
+      }
+    ], { generatedAt: '2026-01-01T00:00:30Z' });
+
+    assert.deepEqual(alerts, [
+      {
+        id: 'derived:failed:sess-failed',
+        source: 'derived-session',
+        severity: 'error',
+        event: 'SessionFailed',
+        message: 'Session entered failed state (2 errors)',
+        createdAt: '2026-01-01T00:00:20Z',
+        sessionId: 'sess-failed',
+        agentId: '',
+        derivedReason: 'failed'
+      },
+      {
+        id: 'derived:stuck:sess-stuck',
+        source: 'derived-session',
+        severity: 'warning',
+        event: 'SessionStuck',
+        message: 'No session activity for 2m+ without a terminal event',
+        createdAt: '2026-01-01T00:00:10Z',
+        sessionId: 'sess-stuck',
+        agentId: '',
+        derivedReason: 'stuck'
+      }
+    ]);
+  });
+
   it('surfaces custom-rule cost spikes from annotated session rows', () => {
     const sessions = [{
       sessionId: 'sess-risk',
@@ -42,12 +83,12 @@ describe('buildDerivedSessionAlerts', () => {
     });
   });
 
-  it('ignores session reasons that are already represented elsewhere', () => {
+  it('ignores session reasons without a derived alert builder', () => {
     const alerts = buildDerivedSessionAlerts([
       {
         sessionId: 'sess-stuck',
         lastSeen: '2026-01-01T00:00:00Z',
-        needsAttentionReasons: ['stuck', 'warning']
+        needsAttentionReasons: ['warning']
       }
     ]);
 
@@ -65,19 +106,26 @@ describe('mergeAlertsForPanel', () => {
       message: 'boom',
       createdAt: '2026-01-01T00:00:10Z'
     }];
-    const sessionRows = [{
-      sessionId: 'sess-risk',
-      lastSeen: '2026-01-01T00:00:20Z',
-      costUsd: 0.6,
-      tokenTotal: 22_000,
-      needsAttentionReasons: ['cost_spike']
-    }];
+    const sessionRows = [
+      {
+        sessionId: 'sess-risk',
+        lastSeen: '2026-01-01T00:00:20Z',
+        costUsd: 0.6,
+        tokenTotal: 22_000,
+        needsAttentionReasons: ['cost_spike']
+      },
+      {
+        sessionId: 'sess-stuck',
+        lastSeen: '2026-01-01T00:00:08Z',
+        needsAttentionReasons: ['stuck']
+      }
+    ];
 
     const merged = mergeAlertsForPanel(rawAlerts, sessionRows, {
       generatedAt: '2026-01-01T00:00:30Z'
     });
 
-    assert.deepEqual(merged.map((alert) => alert.id), ['derived:cost_spike:sess-risk', 'raw-1']);
+    assert.deepEqual(merged.map((alert) => alert.id), ['derived:cost_spike:sess-risk', 'raw-1', 'derived:stuck:sess-stuck']);
     assert.equal(merged[1], rawAlerts[0]);
   });
 
