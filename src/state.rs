@@ -20,7 +20,11 @@ fn elapsed_secs_from(last_seen: &str, now: OffsetDateTime) -> Option<i64> {
 
 fn is_terminal_event_hint(last_event: &str) -> bool {
     matches!(
-        last_event.trim().to_ascii_lowercase().replace([' ', '-'], "_").as_str(),
+        last_event
+            .trim()
+            .to_ascii_lowercase()
+            .replace([' ', '-'], "_")
+            .as_str(),
         "done"
             | "complete"
             | "completed"
