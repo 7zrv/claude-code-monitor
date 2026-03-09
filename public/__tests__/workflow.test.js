@@ -25,17 +25,27 @@ describe('recalcWorkflow', () => {
     assert.equal(result[0].total, 5);
   });
 
-  it('maps agent with warnings (no errors) to at-risk status', () => {
+  it('keeps warning-only agents running when activity is recent', () => {
     const agents = [
       { agentId: 'reviewer', error: 0, warning: 3, total: 10, lastEvent: 'review', lastSeen: '2026-01-01T00:00:00Z' }
     ];
-    const result = recalcWorkflow(agents);
+    const now = new Date('2026-01-01T00:00:00Z').getTime() + 10_000;
+    const result = recalcWorkflow(agents, now);
+    assert.equal(result[0].status, 'running');
+  });
+
+  it('maps stale non-terminal agents to at-risk status', () => {
+    const agents = [
+      { agentId: 'reviewer', error: 0, warning: 3, total: 10, lastEvent: 'review', lastSeen: '2026-01-01T00:00:00Z' }
+    ];
+    const now = new Date('2026-01-01T00:00:00Z').getTime() + 180_000;
+    const result = recalcWorkflow(agents, now);
     assert.equal(result[0].status, 'at-risk');
   });
 
   it('maps agent with total > 0 and recent lastSeen to running status', () => {
     const lastSeen = '2026-01-01T00:00:00Z';
-    const now = new Date(lastSeen).getTime() + 10_000; // 10초 후
+    const now = new Date(lastSeen).getTime() + 10_000;
     const agents = [
       { agentId: 'coder', error: 0, warning: 0, total: 7, lastEvent: 'code', lastSeen }
     ];
@@ -53,7 +63,7 @@ describe('recalcWorkflow', () => {
 
   it('preserves all agent fields in output', () => {
     const lastSeen = '2026-02-28T12:00:00Z';
-    const now = new Date(lastSeen).getTime() + 5_000; // 5초 후
+    const now = new Date(lastSeen).getTime() + 5_000;
     const agents = [
       { agentId: 'alpha', error: 0, warning: 0, total: 3, lastEvent: 'ping', lastSeen, model: 'claude-opus-4-6' }
     ];
@@ -81,11 +91,11 @@ describe('recalcWorkflow', () => {
     const result = recalcWorkflow(agents, now);
     assert.equal(result.length, 3);
     assert.equal(result[0].status, 'blocked');
-    assert.equal(result[1].status, 'at-risk');
+    assert.equal(result[1].status, 'running');
     assert.equal(result[2].status, 'running');
   });
 
-  it('status priority: error > warning > total > idle', () => {
+  it('status priority: error still overrides time and warning counts', () => {
     const agent = { agentId: 'x', error: 1, warning: 5, total: 10, lastEvent: 'e', lastSeen: '2026-01-01T00:00:00Z' };
     const result = recalcWorkflow([agent]);
     assert.equal(result[0].status, 'blocked');
@@ -107,13 +117,31 @@ describe('recalcWorkflow', () => {
     assert.equal(result[0].displayName, '');
   });
 
-  // --- 시간 기반 상태 테스트 ---
-
-  it('completed when last_seen over 2 minutes', () => {
+  it('completed when a terminal hint is older than two minutes', () => {
     const lastSeen = '2026-01-01T00:00:00Z';
-    const now = new Date(lastSeen).getTime() + 180_000; // 3분 후
+    const now = new Date(lastSeen).getTime() + 180_000;
     const agents = [
-      { agentId: 'done', error: 0, warning: 0, total: 5, lastEvent: 'msg', lastSeen }
+      { agentId: 'done', error: 0, warning: 0, total: 5, lastEvent: 'done', lastSeen }
+    ];
+    const result = recalcWorkflow(agents, now);
+    assert.equal(result[0].status, 'completed');
+  });
+
+  it('at-risk when inactivity exceeds two minutes without a terminal hint', () => {
+    const lastSeen = '2026-01-01T00:00:00Z';
+    const now = new Date(lastSeen).getTime() + 180_000;
+    const agents = [
+      { agentId: 'stale', error: 0, warning: 0, total: 5, lastEvent: 'msg', lastSeen }
+    ];
+    const result = recalcWorkflow(agents, now);
+    assert.equal(result[0].status, 'at-risk');
+  });
+
+  it('completed after the long fallback window even without a terminal hint', () => {
+    const lastSeen = '2026-01-01T00:00:00Z';
+    const now = new Date(lastSeen).getTime() + 960_000;
+    const agents = [
+      { agentId: 'stale', error: 0, warning: 0, total: 5, lastEvent: 'msg', lastSeen }
     ];
     const result = recalcWorkflow(agents, now);
     assert.equal(result[0].status, 'completed');
@@ -121,7 +149,7 @@ describe('recalcWorkflow', () => {
 
   it('idle when last_seen between 30s and 2min', () => {
     const lastSeen = '2026-01-01T00:00:00Z';
-    const now = new Date(lastSeen).getTime() + 60_000; // 60초 후
+    const now = new Date(lastSeen).getTime() + 60_000;
     const agents = [
       { agentId: 'paused', error: 0, warning: 0, total: 5, lastEvent: 'msg', lastSeen }
     ];
@@ -131,7 +159,7 @@ describe('recalcWorkflow', () => {
 
   it('running when last_seen under 30s', () => {
     const lastSeen = '2026-01-01T00:00:00Z';
-    const now = new Date(lastSeen).getTime() + 10_000; // 10초 후
+    const now = new Date(lastSeen).getTime() + 10_000;
     const agents = [
       { agentId: 'active', error: 0, warning: 0, total: 3, lastEvent: 'msg', lastSeen }
     ];
@@ -141,7 +169,7 @@ describe('recalcWorkflow', () => {
 
   it('blocked overrides time', () => {
     const lastSeen = '2026-01-01T00:00:00Z';
-    const now = new Date(lastSeen).getTime() + 600_000; // 10분 후
+    const now = new Date(lastSeen).getTime() + 600_000;
     const agents = [
       { agentId: 'err', error: 1, warning: 0, total: 5, lastEvent: 'err', lastSeen }
     ];
@@ -149,14 +177,14 @@ describe('recalcWorkflow', () => {
     assert.equal(result[0].status, 'blocked');
   });
 
-  it('at-risk overrides time', () => {
+  it('warning does not block long-running agents from becoming completed with a terminal hint', () => {
     const lastSeen = '2026-01-01T00:00:00Z';
-    const now = new Date(lastSeen).getTime() + 600_000; // 10분 후
+    const now = new Date(lastSeen).getTime() + 600_000;
     const agents = [
-      { agentId: 'warn', error: 0, warning: 2, total: 5, lastEvent: 'warn', lastSeen }
+      { agentId: 'warn', error: 0, warning: 2, total: 5, lastEvent: 'done', lastSeen }
     ];
     const result = recalcWorkflow(agents, now);
-    assert.equal(result[0].status, 'at-risk');
+    assert.equal(result[0].status, 'completed');
   });
 
   it('invalid lastSeen string falls back to idle', () => {
@@ -175,11 +203,11 @@ describe('splitWorkflow', () => {
       { roleId: 'b', status: 'completed', lastSeen: '2026-01-01T00:00:05Z' },
       { roleId: 'c', status: 'blocked', lastSeen: '2026-01-01T00:00:08Z' },
       { roleId: 'd', status: 'idle', lastSeen: '2026-01-01T00:00:03Z' },
-      { roleId: 'e', status: 'at-risk', lastSeen: '2026-01-01T00:00:07Z' },
+      { roleId: 'e', status: 'at-risk', lastSeen: '2026-01-01T00:00:07Z' }
     ];
     const { active, completed } = splitWorkflow(rows);
-    assert.deepStrictEqual(active.map(r => r.roleId), ['a', 'c', 'e']);
-    assert.deepStrictEqual(completed.map(r => r.roleId), ['b', 'd']);
+    assert.deepStrictEqual(active.map((r) => r.roleId), ['a', 'c', 'e']);
+    assert.deepStrictEqual(completed.map((r) => r.roleId), ['b', 'd']);
   });
 
   it('sorts each group by lastSeen descending', () => {
@@ -187,22 +215,21 @@ describe('splitWorkflow', () => {
       { roleId: 'a', status: 'running', lastSeen: '2026-01-01T00:00:01Z' },
       { roleId: 'b', status: 'running', lastSeen: '2026-01-01T00:00:10Z' },
       { roleId: 'c', status: 'completed', lastSeen: '2026-01-01T00:00:05Z' },
-      { roleId: 'd', status: 'completed', lastSeen: '2026-01-01T00:00:09Z' },
+      { roleId: 'd', status: 'completed', lastSeen: '2026-01-01T00:00:09Z' }
     ];
     const { active, completed } = splitWorkflow(rows);
-    assert.deepStrictEqual(active.map(r => r.roleId), ['b', 'a']);
-    assert.deepStrictEqual(completed.map(r => r.roleId), ['d', 'c']);
+    assert.deepStrictEqual(active.map((r) => r.roleId), ['b', 'a']);
+    assert.deepStrictEqual(completed.map((r) => r.roleId), ['d', 'c']);
   });
 
   it('limits completed to 20', () => {
     const rows = Array.from({ length: 25 }, (_, i) => ({
       roleId: `c${i}`,
       status: 'completed',
-      lastSeen: `2026-01-01T00:00:${String(i).padStart(2, '0')}Z`,
+      lastSeen: `2026-01-01T00:00:${String(i).padStart(2, '0')}Z`
     }));
     const { completed } = splitWorkflow(rows);
     assert.equal(completed.length, 20);
-    // newest first
     assert.equal(completed[0].roleId, 'c24');
   });
 
@@ -215,7 +242,7 @@ describe('splitWorkflow', () => {
   it('handles rows with null lastSeen', () => {
     const rows = [
       { roleId: 'a', status: 'running', lastSeen: '2026-01-01T00:00:10Z' },
-      { roleId: 'b', status: 'idle', lastSeen: null },
+      { roleId: 'b', status: 'idle', lastSeen: null }
     ];
     const { active, completed } = splitWorkflow(rows);
     assert.equal(active.length, 1);

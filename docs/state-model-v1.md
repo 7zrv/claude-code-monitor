@@ -19,19 +19,28 @@
 
 ### `stuck`
 
-- 조건: `error === 0` 이고 `warning > 0`
-- 의미: 세션이 실패하진 않았지만 경고 상태로 진입했다.
-- 예: 재시도, 도구 호출 문제, 사용자 개입 필요 가능성
+- 조건:
+  - `error === 0`
+  - `total > 0`
+  - 최근 이벤트가 `120초` 이상 비어 있음
+  - terminal hint가 없고 아직 `completed`로 보기엔 이르다
+- 의미: 세션이 진행 이력은 있지만 일정 시간 동안 무응답 상태다.
+- 예: 장시간 도구 대기, 끊긴 작업 흐름, 사용자 개입 필요 상태
 
 ### `active`
 
-- 조건: `error === 0`, `warning === 0`, `total > 0`, `lastSeen < 30초`
+- 조건: `error === 0`, `total > 0`, `lastSeen < 30초`
 - 의미: 최근 작업이 들어온 정상 진행 세션
 
 ### `completed`
 
-- 조건: `error === 0`, `warning === 0`, `total > 0`, `lastSeen >= 120초`
-- 의미: 최근 이벤트가 없고 완료된 것으로 간주하는 세션
+- 조건:
+  - `error === 0`
+  - `total > 0`
+  - 아래 둘 중 하나를 만족
+    - terminal hint가 있고 `lastSeen >= 120초`
+    - terminal hint가 없어도 `lastSeen >= 15분`
+- 의미: 종료성 이벤트가 보였거나, 매우 긴 무응답 구간을 지나 보수적으로 완료로 간주하는 세션
 
 ### `idle`
 
@@ -41,15 +50,17 @@
   - 최근 이벤트가 30초 이상 120초 미만으로 비어 있는 중간 구간
 - 의미: 진행 중이라고 단정할 수 없고, 완료로도 확정하지 않는 상태
 
-## 판정 우선순위
+## 판정 흐름
 
-1. `failed`
-2. `stuck`
-3. `active`
-4. `completed`
-5. `idle`
+1. `failed`: `error > 0`
+2. `idle`: `total <= 0` 또는 `lastSeen`이 비어 있거나 파싱 불가
+3. `active`: 최근 이벤트가 `30초` 미만
+4. `completed`: terminal hint와 `120초` 이상 무응답이 함께 있거나, terminal hint 없이도 `15분` 이상 무응답
+5. `stuck`: `120초` 이상 무응답이지만 `completed` 조건은 아직 아님
+6. `idle`: 그 외 중간 구간
 
-경고가 있는 세션은 최근 이벤트가 있더라도 `active`보다 `stuck`을 우선한다.
+`warning`은 상태가 아니라 attention reason이다.
+즉, 최근 활동이 있으면 `warning` 세션도 `active`일 수 있다.
 
 ## workflow 매핑
 
@@ -59,7 +70,7 @@
 - `completed` -> `completed`
 - `idle` -> `idle`
 
-매핑 구현: [public/lib/workflow.js](/Users/yunseojin/claude-code-monitor/public/lib/workflow.js)
+매핑 구현: [public/lib/workflow.js](/Users/yunseojin/claude-code-monitor/public/lib/workflow.js), [src/state.rs](/Users/yunseojin/claude-code-monitor/src/state.rs)
 
 ## 현재 적용 위치
 
@@ -69,6 +80,6 @@
 
 ## v1 한계
 
-- `stuck`은 현재 `warning > 0` 기반의 단순 규칙이다.
+- terminal hint는 현재 `lastEvent`와 agent `lastEvent` 문자열 기반의 보수 규칙이다.
+- explicit 종료 이벤트가 없는 세션은 `15분` fallback 이후에야 `completed`가 된다.
 - `idle`의 30초~120초 구간은 향후 `paused` 또는 `cooldown`으로 분리할 수 있다.
-- 세션 단위 `cost spike`와 `silence` 탐지는 `#125`에서 확장한다.

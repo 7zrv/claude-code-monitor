@@ -16,15 +16,31 @@ describe('deriveSessionState', () => {
     assert.equal(deriveSessionState(row, now), 'active');
   });
 
-  it('returns stuck when warning count is present', () => {
-    const row = { error: 0, warning: 2, total: 4, lastSeen: '2026-01-01T00:00:00Z' };
-    assert.equal(deriveSessionState(row), 'stuck');
+  it('keeps warning-only sessions active when work is recent', () => {
+    const lastSeen = '2026-01-01T00:00:00Z';
+    const now = new Date(lastSeen).getTime() + 10_000;
+    const row = { error: 0, warning: 2, total: 4, lastSeen, lastEvent: 'assistant_message' };
+    assert.equal(deriveSessionState(row, now), 'active');
   });
 
-  it('returns completed when work is older than two minutes', () => {
+  it('returns stuck when work is older than two minutes without a terminal hint', () => {
     const lastSeen = '2026-01-01T00:00:00Z';
     const now = new Date(lastSeen).getTime() + 180_000;
-    const row = { error: 0, warning: 0, total: 5, lastSeen };
+    const row = { error: 0, warning: 0, total: 5, lastSeen, lastEvent: 'assistant_message' };
+    assert.equal(deriveSessionState(row, now), 'stuck');
+  });
+
+  it('returns completed when work is older than two minutes with a terminal hint', () => {
+    const lastSeen = '2026-01-01T00:00:00Z';
+    const now = new Date(lastSeen).getTime() + 180_000;
+    const row = { error: 0, warning: 0, total: 5, lastSeen, lastEvent: 'done' };
+    assert.equal(deriveSessionState(row, now), 'completed');
+  });
+
+  it('returns completed after the long fallback window without a terminal hint', () => {
+    const lastSeen = '2026-01-01T00:00:00Z';
+    const now = new Date(lastSeen).getTime() + 960_000;
+    const row = { error: 0, warning: 0, total: 5, lastSeen, lastEvent: 'assistant_message' };
     assert.equal(deriveSessionState(row, now), 'completed');
   });
 
@@ -130,8 +146,8 @@ describe('annotateSessionsWithState', () => {
   it('aggregates agent totals by session and annotates active state', () => {
     const sessions = [{ sessionId: 'sess-1', lastSeen: '2026-01-01T00:00:00Z', tokenTotal: 100, costUsd: 0.01, agentIds: ['a1', 'a2'] }];
     const agents = [
-      { agentId: 'a1', sessionId: 'sess-1', total: 2, warning: 0, error: 0 },
-      { agentId: 'a2', sessionId: 'sess-1', total: 1, warning: 0, error: 0 }
+      { agentId: 'a1', sessionId: 'sess-1', total: 2, warning: 0, error: 0, lastEvent: 'assistant_message', lastSeen: '2026-01-01T00:00:00Z' },
+      { agentId: 'a2', sessionId: 'sess-1', total: 1, warning: 0, error: 0, lastEvent: 'tool_call', lastSeen: '2026-01-01T00:00:00Z' }
     ];
     const rows = annotateSessionsWithState(sessions, agents, new Date('2026-01-01T00:00:10Z').getTime());
 
@@ -145,10 +161,21 @@ describe('annotateSessionsWithState', () => {
     assert.equal(rows[0].isCostSpike, false);
   });
 
-  it('marks a session as stuck when any agent warning exists', () => {
+  it('keeps a warning session active when activity is recent', () => {
     const sessions = [{ sessionId: 'sess-1', lastSeen: '2026-01-01T00:00:00Z', tokenTotal: 100, costUsd: 0.01, agentIds: ['a1'] }];
-    const agents = [{ agentId: 'a1', sessionId: 'sess-1', total: 2, warning: 1, error: 0 }];
-    const rows = annotateSessionsWithState(sessions, agents);
+    const agents = [{ agentId: 'a1', sessionId: 'sess-1', total: 2, warning: 1, error: 0, lastEvent: 'assistant_message', lastSeen: '2026-01-01T00:00:00Z' }];
+    const rows = annotateSessionsWithState(sessions, agents, new Date('2026-01-01T00:00:10Z').getTime());
+
+    assert.equal(rows[0].sessionState, 'active');
+    assert.equal(rows[0].needsAttention, true);
+    assert.equal(rows[0].needsAttentionRank, 200);
+    assert.deepEqual(rows[0].needsAttentionReasons, ['warning']);
+  });
+
+  it('marks a session as stuck after prolonged inactivity without a terminal hint', () => {
+    const sessions = [{ sessionId: 'sess-1', lastSeen: '2026-01-01T00:00:00Z', tokenTotal: 100, costUsd: 0.01, agentIds: ['a1'] }];
+    const agents = [{ agentId: 'a1', sessionId: 'sess-1', total: 2, warning: 1, error: 0, lastEvent: 'assistant_message', lastSeen: '2026-01-01T00:00:00Z' }];
+    const rows = annotateSessionsWithState(sessions, agents, new Date('2026-01-01T00:03:00Z').getTime());
 
     assert.equal(rows[0].sessionState, 'stuck');
     assert.equal(rows[0].needsAttention, true);
@@ -156,9 +183,18 @@ describe('annotateSessionsWithState', () => {
     assert.deepEqual(rows[0].needsAttentionReasons, ['stuck', 'warning']);
   });
 
+  it('marks a session as completed when the latest agent event is terminal', () => {
+    const sessions = [{ sessionId: 'sess-1', lastSeen: '2026-01-01T00:00:00Z', tokenTotal: 100, costUsd: 0.01, agentIds: ['a1'] }];
+    const agents = [{ agentId: 'a1', sessionId: 'sess-1', total: 2, warning: 0, error: 0, lastEvent: 'done', lastSeen: '2026-01-01T00:00:00Z' }];
+    const rows = annotateSessionsWithState(sessions, agents, new Date('2026-01-01T00:03:00Z').getTime());
+
+    assert.equal(rows[0].sessionState, 'completed');
+    assert.equal(rows[0].needsAttention, false);
+  });
+
   it('marks a session as a cost spike from accumulated session fields', () => {
     const sessions = [{ sessionId: 'sess-1', lastSeen: '2026-01-01T00:00:00Z', tokenTotal: 21_000, costUsd: 0.51, agentIds: ['a1'] }];
-    const agents = [{ agentId: 'a1', sessionId: 'sess-1', total: 2, warning: 0, error: 0 }];
+    const agents = [{ agentId: 'a1', sessionId: 'sess-1', total: 2, warning: 0, error: 0, lastEvent: 'assistant_message', lastSeen: '2026-01-01T00:00:00Z' }];
     const rows = annotateSessionsWithState(sessions, agents, new Date('2026-01-01T00:00:10Z').getTime());
 
     assert.equal(rows[0].sessionState, 'active');
@@ -170,7 +206,7 @@ describe('annotateSessionsWithState', () => {
 
   it('threads custom rules through annotateSessionsWithState', () => {
     const sessions = [{ sessionId: 'sess-1', lastSeen: '2026-01-01T00:00:00Z', tokenTotal: 19_000, costUsd: 0.35, agentIds: ['a1'] }];
-    const agents = [{ agentId: 'a1', sessionId: 'sess-1', total: 2, warning: 1, error: 0 }];
+    const agents = [{ agentId: 'a1', sessionId: 'sess-1', total: 2, warning: 1, error: 0, lastEvent: 'assistant_message', lastSeen: '2026-01-01T00:00:00Z' }];
     const rows = annotateSessionsWithState(
       sessions,
       agents,
@@ -178,10 +214,10 @@ describe('annotateSessionsWithState', () => {
       { costUsdThreshold: 0.3, tokenTotalThreshold: 30_000, warningCountThreshold: 2 }
     );
 
-    assert.equal(rows[0].sessionState, 'stuck');
+    assert.equal(rows[0].sessionState, 'active');
     assert.equal(rows[0].needsAttention, true);
     assert.equal(rows[0].isCostSpike, true);
-    assert.deepEqual(rows[0].needsAttentionReasons, ['stuck', 'cost_spike']);
-    assert.equal(rows[0].needsAttentionRank, 400);
+    assert.deepEqual(rows[0].needsAttentionReasons, ['cost_spike']);
+    assert.equal(rows[0].needsAttentionRank, 100);
   });
 });
