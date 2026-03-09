@@ -1377,6 +1377,16 @@ tr.tree-last .tree-branch::before {
   gap: 8px;
 }
 
+.session-detail-section {
+  display: grid;
+  gap: 8px;
+}
+
+.session-detail-section h3 {
+  margin: 0;
+  font-size: 13px;
+}
+
 .session-detail-stat {
   padding: 10px;
   border: 1px solid var(--border-subtle);
@@ -1395,6 +1405,63 @@ tr.tree-last .tree-branch::before {
   margin-top: 4px;
   font-size: 14px;
   font-weight: 600;
+}
+
+.session-detail-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.session-detail-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.session-detail-note {
+  margin: 0;
+  color: var(--chart-sublabel);
+  font-size: 13px;
+}
+
+.session-detail-alert-list {
+  display: grid;
+  gap: 8px;
+}
+
+.session-detail-alert-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.session-detail-alert-item:hover {
+  background: var(--hover-overlay);
+}
+
+.session-detail-alert-text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.session-detail-alert-text strong,
+.session-detail-alert-text span {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .session-detail-empty {

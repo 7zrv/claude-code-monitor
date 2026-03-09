@@ -7,6 +7,7 @@ import {
   renderSessionDetailMeta,
   selectSessionsForList
 } from '../lib/renders/sessions.js';
+import { resetDisplayNames } from '../lib/agent-display.js';
 
 function makeRoot() {
   return { innerHTML: '', dataset: {}, onclick: null };
@@ -246,6 +247,7 @@ describe('renderSessionDetailMeta', () => {
 
   beforeEach(() => {
     root = makeRoot();
+    resetDisplayNames();
   });
 
   it('renders empty workspace guidance when no session is selected', () => {
@@ -267,6 +269,39 @@ describe('renderSessionDetailMeta', () => {
     assert.ok(root.innerHTML.includes('Attention Rank'));
     assert.ok(root.innerHTML.includes('오류 발생'));
     assert.ok(root.innerHTML.includes('data-status="failed"'));
+  });
+
+  it('renders session participants and linked alerts in the detail summary', () => {
+    renderSessionDetailMeta({
+      sessionId: 's1',
+      sessionState: 'active',
+      lastSeen: '2025-01-01T00:00:10Z',
+      tokenTotal: 500,
+      costUsd: 0.05,
+      agentIds: ['lead-1', 'sub-2'],
+      needsAttentionRank: 100,
+      needsAttentionReasons: ['cost_spike']
+    }, root, {
+      sessionAgents: [
+        { agentId: 'lead-1', model: 'claude-opus-4-6' },
+        { agentId: 'sub-2', model: 'claude-sonnet-4-6' }
+      ],
+      sessionAlerts: [
+        {
+          id: 'derived:stuck:s1',
+          severity: 'warning',
+          event: 'SessionStuck',
+          message: 'No session activity for 2m+ without a terminal event'
+        }
+      ]
+    });
+
+    assert.ok(root.innerHTML.includes('Participants'));
+    assert.ok(root.innerHTML.includes('Lead (Opus)'));
+    assert.ok(root.innerHTML.includes('Sub (Sonnet)'));
+    assert.ok(root.innerHTML.includes('Linked Alerts'));
+    assert.ok(root.innerHTML.includes('data-session-alert-id="derived:stuck:s1"'));
+    assert.ok(root.innerHTML.includes('SessionStuck'));
   });
 });
 
