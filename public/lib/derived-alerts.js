@@ -1,4 +1,19 @@
 const DERIVED_ALERT_BUILDERS = {
+  failed: {
+    event: 'SessionFailed',
+    severity: 'error',
+    buildMessage(session) {
+      const errorCount = Number(session.error) || 0;
+      return `Session entered failed state (${errorCount} errors)`;
+    }
+  },
+  stuck: {
+    event: 'SessionStuck',
+    severity: 'warning',
+    buildMessage() {
+      return 'No session activity for 2m+ without a terminal event';
+    }
+  },
   cost_spike: {
     event: 'SessionCostSpike',
     severity: 'warning',
