@@ -6,7 +6,8 @@ import {
   drilldownHtml,
   renderAlerts,
   resolveAlertSessionId,
-  resetAlertSelection
+  resetAlertSelection,
+  selectAlertById
 } from '../lib/renders/alerts.js';
 
 function makeAlert(overrides = {}) {
@@ -389,5 +390,34 @@ describe('renderAlerts', () => {
     assert.equal(openedSessionId, 'sess-derived');
     assert.equal(drilldownRoot.hidden, false);
     assert.ok(drilldownRoot.innerHTML.includes('sess-derived'));
+  });
+
+  it('preserves selected alert drilldown when selection is triggered externally', () => {
+    const alertItem = {
+      dataset: { alertId: 'alert-1' },
+      classList: { add() {}, remove() {} }
+    };
+    const alertsRoot = {
+      innerHTML: '',
+      onclick: null,
+      querySelectorAll(selector) {
+        if (selector === '[data-alert-id]') return [alertItem];
+        return [];
+      }
+    };
+    const drilldownRoot = makeDrilldownRoot();
+    const alerts = [makeAlert({ sessionId: 'sess-1' })];
+    const snapshot = makeSnapshot({
+      recent: [makeEvent({ sessionId: 'sess-1' })]
+    });
+
+    renderAlerts(alerts, alertsRoot, drilldownRoot, snapshot);
+    assert.equal(selectAlertById('alert-1', alerts, alertsRoot, drilldownRoot, snapshot), true);
+    assert.equal(drilldownRoot.hidden, false);
+    assert.ok(drilldownRoot.innerHTML.includes('sess-1'));
+
+    renderAlerts(alerts, alertsRoot, drilldownRoot, snapshot);
+    assert.equal(drilldownRoot.hidden, false);
+    assert.ok(drilldownRoot.innerHTML.includes('sess-1'));
   });
 });

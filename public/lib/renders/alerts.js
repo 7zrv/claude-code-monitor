@@ -117,6 +117,35 @@ export function drilldownHtml(alert, context) {
     </div>`;
 }
 
+function clearSelectedAlertClasses(el) {
+  if (!el?.querySelectorAll) return;
+  el.querySelectorAll('.alert-item--selected').forEach((item) => item.classList.remove('alert-item--selected'));
+}
+
+export function selectAlertById(alertId, alerts = [], el, drilldownEl, snapshot) {
+  const alert = alerts.find((entry) => entry.id === alertId);
+  if (!alert) return false;
+
+  _selectedAlertId = alertId;
+  clearSelectedAlertClasses(el);
+
+  if (el?.querySelectorAll) {
+    el.querySelectorAll('[data-alert-id]').forEach((item) => {
+      if (item.dataset?.alertId === alertId) {
+        item.classList.add('alert-item--selected');
+      }
+    });
+  }
+
+  if (drilldownEl) {
+    const ctx = getAlertContext(alert, snapshot);
+    drilldownEl.innerHTML = drilldownHtml(alert, ctx);
+    drilldownEl.removeAttribute('hidden');
+  }
+
+  return true;
+}
+
 export function renderAlerts(alerts, el, drilldownEl, snapshot, options = {}) {
   const { onOpenSession } = options;
   if (!alerts || !alerts.length) {
@@ -138,12 +167,7 @@ export function renderAlerts(alerts, el, drilldownEl, snapshot, options = {}) {
 
   // Update drilldown if open
   if (_selectedAlertId && drilldownEl) {
-    const selected = alerts.find((a) => a.id === _selectedAlertId);
-    if (selected) {
-      const ctx = getAlertContext(selected, snapshot);
-      drilldownEl.innerHTML = drilldownHtml(selected, ctx);
-      drilldownEl.removeAttribute('hidden');
-    }
+    selectAlertById(_selectedAlertId, alerts, el, drilldownEl, snapshot);
   }
 
   el.onclick = (event) => {
@@ -162,16 +186,7 @@ export function renderAlerts(alerts, el, drilldownEl, snapshot, options = {}) {
       return;
     }
 
-    // Deselect previous
-    el.querySelectorAll('.alert-item--selected').forEach((prev) => prev.classList.remove('alert-item--selected'));
-    _selectedAlertId = alertId;
-    item.classList.add('alert-item--selected');
-
-    if (drilldownEl) {
-      const ctx = getAlertContext(alert, snapshot);
-      drilldownEl.innerHTML = drilldownHtml(alert, ctx);
-      drilldownEl.removeAttribute('hidden');
-    }
+    selectAlertById(alertId, alerts, el, drilldownEl, snapshot);
 
     const linkedSessionId = item.dataset.sessionId || resolveAlertSessionId(alert, snapshot);
     if (linkedSessionId && typeof onOpenSession === 'function') {

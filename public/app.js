@@ -13,7 +13,7 @@ import { renderAlertRules } from './lib/renders/alert-rules.js';
 import { renderGraphs } from './lib/renders/charts.js';
 import { getFilteredEvents, renderEventMeta, renderEvents } from './lib/renders/events.js';
 import { renderAgents, populateAgentFilter, toggleAgentTreeNode } from './lib/renders/agents.js';
-import { renderAlerts } from './lib/renders/alerts.js';
+import { renderAlerts, resolveAlertSessionId, selectAlertById } from './lib/renders/alerts.js';
 import { renderTimeline } from './lib/renders/timeline.js';
 import {
   renderSessionsList,
@@ -83,6 +83,8 @@ let selectedSessionId = '';
 const sessionEventsCache = new Map();
 let sessionDetailState = { sessionId: '', loading: false, error: false };
 let alertRules = loadAlertRules(ALERT_RULES_STORAGE_KEY);
+let currentPanelAlerts = [];
+let currentAlertSnapshot = null;
 
 function queueRender() {
   if (renderQueued) return;
@@ -182,6 +184,8 @@ function renderSnapshot(snapshot) {
   const selectedSession = resolveSelectedSession(sessionRows, visibleSessionRows);
   const alerts = mergeAlertsForPanel(snapshot.alerts || [], sessionRows, { generatedAt: snapshot.generatedAt });
   const alertSnapshot = { ...snapshot, sessions: sessionRows };
+  currentPanelAlerts = alerts;
+  currentAlertSnapshot = alertSnapshot;
   renderCards(snapshot.totals, sessionRows, snapshot.hourlyBuckets || [], snapshot.startedAt || '');
   renderNeedsAttention(sessionRows, needsAttentionRoot, openSessionDetail);
   populateAgentFilter(snapshot.agents || [], agentFilter);
@@ -214,8 +218,14 @@ function resolveSelectedSession(sessionRows = [], visibleSessionRows = sessionRo
 
 function renderSelectedSessionDetail(session) {
   sessionDetailTitle.textContent = session?.sessionId || '선택된 세션 없음';
-  renderSessionDetailMeta(session, sessionDetailMeta);
   const hasSession = Boolean(session?.sessionId);
+  const sessionAgents = hasSession
+    ? (snapshotState?.agents || []).filter((agent) => agent.sessionId === session.sessionId)
+    : [];
+  const sessionAlerts = hasSession
+    ? currentPanelAlerts.filter((alert) => resolveAlertSessionId(alert, currentAlertSnapshot) === session.sessionId)
+    : [];
+  renderSessionDetailMeta(session, sessionDetailMeta, { sessionAgents, sessionAlerts });
   sessionDetailBack.hidden = !hasSession;
   sessionDetailExport.hidden = !hasSession;
   if (!hasSession) {
@@ -240,6 +250,11 @@ function renderSelectedSessionDetail(session) {
   }
 
   renderSessionDetail(sessionEventsCache.get(session.sessionId) || [], sessionDetailEvents);
+}
+
+function openAlertFromSessionDetail(alertId) {
+  if (!alertId || !currentAlertSnapshot) return;
+  selectAlertById(alertId, currentPanelAlerts, alertsRoot, alertDrilldownRoot, currentAlertSnapshot);
 }
 
 function doSaveFilters() {
@@ -320,6 +335,12 @@ sessionDetailBack.addEventListener('click', () => {
   selectedSessionId = '';
   sessionDetailState = { sessionId: '', loading: false, error: false };
   queueRender();
+});
+
+sessionDetailMeta.addEventListener('click', (event) => {
+  const alertBtn = event.target.closest('[data-session-alert-id]');
+  if (!alertBtn) return;
+  openAlertFromSessionDetail(alertBtn.dataset.sessionAlertId);
 });
 
 workflowToggle.addEventListener('click', () => {

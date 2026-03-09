@@ -1,4 +1,5 @@
 import { escapeHtml, relativeTime, statusPill } from '../utils.js';
+import { displayNameFor } from '../agent-display.js';
 
 const REASON_LABELS = {
   failed: '오류 발생',
@@ -155,7 +156,47 @@ function summaryStat(label, value) {
   </div>`;
 }
 
-export function renderSessionDetailMeta(session, root) {
+function renderSessionParticipants(session = {}, sessionAgents = []) {
+  const participants = sessionAgents.length
+    ? sessionAgents.map((agent) => ({
+        agentId: agent.agentId,
+        label: displayNameFor(agent.agentId, agent.model || '')
+      }))
+    : (Array.isArray(session.agentIds) ? session.agentIds : []).map((agentId) => ({
+        agentId,
+        label: displayNameFor(agentId)
+      }));
+
+  if (!participants.length) {
+    return '<p class="session-detail-note">참여 agent 정보가 아직 없습니다.</p>';
+  }
+
+  return `<div class="session-detail-chip-list">${participants
+    .map(
+      (agent) => `<span class="session-detail-chip" title="${escapeHtml(agent.agentId)}">${escapeHtml(agent.label)}</span>`
+    )
+    .join('')}</div>`;
+}
+
+function renderSessionAlerts(sessionAlerts = []) {
+  if (!sessionAlerts.length) {
+    return '<p class="session-detail-note">연결된 alert가 없습니다.</p>';
+  }
+
+  return `<div class="session-detail-alert-list">${sessionAlerts
+    .map(
+      (alert) => `<button type="button" class="session-detail-alert-item" data-session-alert-id="${escapeHtml(alert.id)}">
+        ${statusPill(alert.severity || 'warning')}
+        <span class="session-detail-alert-text">
+          <strong>${escapeHtml(alert.event || 'Alert')}</strong>
+          <span>${escapeHtml(alert.message || '')}</span>
+        </span>
+      </button>`
+    )
+    .join('')}</div>`;
+}
+
+export function renderSessionDetailMeta(session, root, options = {}) {
   if (!session) {
     root.innerHTML = `<div class="session-detail-empty">
       <strong>세션을 선택하세요</strong>
@@ -164,6 +205,7 @@ export function renderSessionDetailMeta(session, root) {
     return;
   }
 
+  const { sessionAgents = [], sessionAlerts = [] } = options;
   const reasonBadges = sessionReasonBadges(session);
   root.innerHTML = `
     <div class="session-detail-summary">
@@ -177,6 +219,14 @@ export function renderSessionDetailMeta(session, root) {
         ${summaryStat('Cost', `$${Number(session.costUsd || 0).toFixed(4)}`)}
         ${summaryStat('Agents', String(Array.isArray(session.agentIds) ? session.agentIds.length : 0))}
         ${summaryStat('Attention Rank', String(Number(session.needsAttentionRank || 0)))}
+      </div>
+      <div class="session-detail-section">
+        <h3>Participants</h3>
+        ${renderSessionParticipants(session, sessionAgents)}
+      </div>
+      <div class="session-detail-section">
+        <h3>Linked Alerts</h3>
+        ${renderSessionAlerts(sessionAlerts)}
       </div>
     </div>`;
 }
