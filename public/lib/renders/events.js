@@ -19,8 +19,9 @@ export function getFilteredEvents(events = [], filters = {}) {
     .slice(0, limit);
 }
 
-export function renderEventMeta(total, filtered, el) {
-  el.textContent = `events: ${filtered}/${total}`;
+export function renderEventMeta(total, filtered, el, options = {}) {
+  const label = String(options.scopeLabel || '').trim();
+  el.textContent = label ? `events: ${filtered}/${total} · ${label}` : `events: ${filtered}/${total}`;
 }
 
 export function renderEventDetail(evt) {

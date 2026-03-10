@@ -9,6 +9,7 @@ import { connectStream, loadSnapshot } from './lib/connection.js';
 import { annotateSessionsWithState } from './lib/session-status.js';
 import { mergeAlertsForPanel } from './lib/derived-alerts.js';
 import { renderNeedsAttention } from './lib/needs-attention.js';
+import { selectDiagnosticsEvents, diagnosticsScopeLabel, diagnosticsEmptyMessage } from './lib/diagnostics-scope.js';
 import { renderAlertRules } from './lib/renders/alert-rules.js';
 import { renderGraphs } from './lib/renders/charts.js';
 import { getFilteredEvents, renderEventMeta, renderEvents } from './lib/renders/events.js';
@@ -24,6 +25,7 @@ import {
   selectSessionsForList
 } from './lib/renders/sessions.js';
 import { isEmptySnapshot, renderEmptyState } from './lib/empty-state.js';
+import { resolveSessionSelection } from './lib/session-selection.js';
 
 const cardsRoot = document.getElementById('cards');
 const workflowRoot = document.getElementById('workflow');
@@ -42,6 +44,7 @@ const eventSearch = document.getElementById('eventSearch');
 const eventMetaEl = document.getElementById('eventMeta');
 const timelineRoot = document.getElementById('timeline');
 const timelineTooltip = document.getElementById('timelineTooltip');
+const timelineScopeEl = document.getElementById('timelineScope');
 
 const sessionsListRoot = document.getElementById('sessionsList');
 const sessionDetailRoot = document.getElementById('sessionDetail');
@@ -53,6 +56,7 @@ const sessionDetailEvents = document.getElementById('sessionDetailEvents');
 const sessionQuickFilter = document.getElementById('sessionQuickFilter');
 const sessionSearch = document.getElementById('sessionSearch');
 const sessionMetaEl = document.getElementById('sessionMeta');
+const eventsScopeEl = document.getElementById('eventsScope');
 
 const chartEls = {
   throughputChart: document.getElementById('throughputChart'),
@@ -80,6 +84,7 @@ const SESSION_FILTERS_KEY = 'agent_monitor_session_filters_v1';
 const WORKFLOW_TOGGLE_KEY = 'agent_monitor_workflow_toggle_v1';
 let showCompleted = loadToggle(WORKFLOW_TOGGLE_KEY);
 let selectedSessionId = '';
+let allowSessionAutoSelect = true;
 const sessionEventsCache = new Map();
 let sessionDetailState = { sessionId: '', loading: false, error: false };
 let alertRules = loadAlertRules(ALERT_RULES_STORAGE_KEY);
@@ -162,14 +167,47 @@ function renderSessionMeta(totalCount, visibleCount) {
   sessionMetaEl.textContent = hasFilters ? `${visibleCount} / ${totalCount} sessions` : `${totalCount} sessions`;
 }
 
-function renderSessionListPanel(sessionRows = []) {
+function renderSessionListPanel(sessionRows = [], selectionId = selectedSessionId) {
   const visibleRows = getVisibleSessionRows(sessionRows);
   renderSessionMeta(sessionRows.length, visibleRows.length);
   renderSessionsList(visibleRows, sessionsListRoot, openSessionDetail, {
-    selectedSessionId,
+    selectedSessionId: selectionId,
     sourceCount: sessionRows.length
   });
   return visibleRows;
+}
+
+function getDiagnosticsScope(selectedSession) {
+  return selectDiagnosticsEvents(snapshotState || {}, selectedSession?.sessionId || '', sessionEventsCache);
+}
+
+function renderDiagnosticsPanels(selectedSession) {
+  const scope = getDiagnosticsScope(selectedSession);
+  const scopeLabel = diagnosticsScopeLabel(scope);
+  if (timelineScopeEl) timelineScopeEl.textContent = scopeLabel;
+  if (eventsScopeEl) eventsScopeEl.textContent = scopeLabel;
+
+  renderTimeline(scope.events, timelineRoot, timelineTooltip, agentFilter.value, {
+    emptyMessage: diagnosticsEmptyMessage(scope)
+  });
+  const filteredEvents = getFilteredEvents(scope.events, getEventFilters());
+  renderEvents(filteredEvents, eventsRoot);
+  renderEventMeta(scope.total, filteredEvents.length, eventMetaEl, { scopeLabel });
+}
+
+function rememberSessionEvent(evt) {
+  const sessionId = evt?.sessionId;
+  if (!sessionId || !sessionEventsCache.has(sessionId)) return;
+
+  const current = sessionEventsCache.get(sessionId);
+  const rows = Array.isArray(current) ? current : [];
+  if (rows.some((row) => row.id === evt.id)) return;
+
+  rows.push(evt);
+  if (rows.length > 500) {
+    rows.splice(0, rows.length - 500);
+  }
+  sessionEventsCache.set(sessionId, rows);
 }
 
 function renderSnapshot(snapshot) {
@@ -180,8 +218,6 @@ function renderSnapshot(snapshot) {
     if (empty) renderEmptyState(emptyStateEl);
   }
   const sessionRows = annotateSessionsWithState(snapshot.sessions || [], snapshot.agents || [], Date.now(), alertRules);
-  const visibleSessionRows = getVisibleSessionRows(sessionRows);
-  const selectedSession = resolveSelectedSession(sessionRows, visibleSessionRows);
   const alerts = mergeAlertsForPanel(snapshot.alerts || [], sessionRows, { generatedAt: snapshot.generatedAt });
   const alertSnapshot = { ...snapshot, sessions: sessionRows };
   currentPanelAlerts = alerts;
@@ -193,27 +229,19 @@ function renderSnapshot(snapshot) {
   renderAgents(snapshot.agents || [], agentsBody, agentFilter.value);
   const allEvents = snapshot.recent || [];
   renderGraphs(allEvents, chartEls, numberFmt, snapshot.toolCallStats);
-  renderTimeline(allEvents, timelineRoot, timelineTooltip, agentFilter.value);
-  const filteredEvents = getFilteredEvents(allEvents, getEventFilters());
-  renderEvents(filteredEvents, eventsRoot);
-  renderEventMeta(allEvents.length, filteredEvents.length, eventMetaEl);
   renderAlerts(alerts, alertsRoot, alertDrilldownRoot, alertSnapshot, { onOpenSession: openSessionDetail });
-  renderSessionListPanel(sessionRows);
+  const visibleSessionRows = getVisibleSessionRows(sessionRows);
+  const nextSelection = resolveSessionSelection(sessionRows, visibleSessionRows, selectedSessionId, allowSessionAutoSelect);
+  selectedSessionId = nextSelection.selectedSessionId;
+  allowSessionAutoSelect = nextSelection.allowAutoSelect;
+  const selectedSession = nextSelection.selectedSession;
+  renderSessionListPanel(sessionRows, selectedSessionId);
+  renderDiagnosticsPanels(selectedSession);
   if (selectedSession && !sessionEventsCache.has(selectedSession.sessionId) && sessionDetailState.sessionId !== selectedSession.sessionId) {
     openSessionDetail(selectedSession.sessionId);
   }
   renderSelectedSessionDetail(selectedSession);
   clock.textContent = `마지막 갱신 ${new Date(snapshot.generatedAt).toLocaleTimeString()}`;
-}
-
-function resolveSelectedSession(sessionRows = [], visibleSessionRows = sessionRows) {
-  const hasSelected = selectedSessionId && sessionRows.some((row) => row.sessionId === selectedSessionId);
-  if (hasSelected) {
-    return sessionRows.find((row) => row.sessionId === selectedSessionId) || null;
-  }
-  const fallback = visibleSessionRows[0] || null;
-  selectedSessionId = fallback?.sessionId || '';
-  return fallback;
 }
 
 function renderSelectedSessionDetail(session) {
@@ -302,10 +330,8 @@ function renderAlertRulesPanel() {
 
 function refilterEvents() {
   if (!snapshotState) return;
-  const allEvents = snapshotState.recent || [];
-  const filtered = getFilteredEvents(allEvents, getEventFilters());
-  renderEvents(filtered, eventsRoot);
-  renderEventMeta(allEvents.length, filtered.length, eventMetaEl);
+  const selectedSession = snapshotState.sessions?.find((session) => session.sessionId === selectedSessionId) || null;
+  renderDiagnosticsPanels(selectedSession);
 }
 
 function refilterSessions() {
@@ -315,6 +341,7 @@ function refilterSessions() {
 
 function openSessionDetail(sessionId) {
   selectedSessionId = sessionId;
+  allowSessionAutoSelect = true;
   sessionDetailState = { sessionId, loading: true, error: false };
   queueRender();
   fetchSessionEvents(sessionId).then((events) => {
@@ -333,6 +360,7 @@ function openSessionDetail(sessionId) {
 
 sessionDetailBack.addEventListener('click', () => {
   selectedSessionId = '';
+  allowSessionAutoSelect = false;
   sessionDetailState = { sessionId: '', loading: false, error: false };
   queueRender();
 });
@@ -363,7 +391,8 @@ timeRangeBar.addEventListener('click', (e) => {
 agentFilter.addEventListener('change', () => {
   if (snapshotState) {
     renderAgents(snapshotState.agents || [], agentsBody, agentFilter.value);
-    renderTimeline(snapshotState.recent || [], timelineRoot, timelineTooltip, agentFilter.value);
+    const selectedSession = snapshotState.sessions?.find((session) => session.sessionId === selectedSessionId) || null;
+    renderDiagnosticsPanels(selectedSession);
   }
 });
 
@@ -405,7 +434,11 @@ connectStream({
   connectionMetaEl,
   onSnapshot(snapshot) { snapshotState = snapshot; queueRender(); },
   onEvent(evt) {
-    if (snapshotState) { applyIncrementalEvent(snapshotState, evt); queueRender(); }
+    if (snapshotState) {
+      applyIncrementalEvent(snapshotState, evt);
+      rememberSessionEvent(evt);
+      queueRender();
+    }
   },
   onFallback() { loadSnapshot().then((snapshot) => renderSnapshot(snapshot)).catch(console.error); }
 });
