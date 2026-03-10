@@ -1,4 +1,5 @@
 use serde_json::json;
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::mpsc::{self, Receiver};
@@ -7,7 +8,7 @@ use std::time::Duration;
 
 #[cfg(test)]
 use crate::state::broadcast_sse;
-use crate::state::{build_snapshot, get_session_events, get_session_export};
+use crate::state::{build_snapshot, get_session_events, get_session_export, ExportAlertRules};
 use crate::types::{App, ParsedRequest};
 use crate::utils::{bytes_response, content_type_for, json_response, now_iso};
 
@@ -40,12 +41,30 @@ pub fn parse_request(stream: &mut TcpStream) -> Option<ParsedRequest> {
     let request_line = lines.next()?;
     let mut parts = request_line.split_whitespace();
     let method = parts.next()?.to_string();
-    let mut path = parts.next()?.to_string();
-    if let Some(idx) = path.find('?') {
-        path = path[..idx].to_string();
+    let (path, query) = split_path_and_query(parts.next()?);
+
+    Some(ParsedRequest {
+        method,
+        path,
+        query,
+    })
+}
+
+fn split_path_and_query(raw_path: &str) -> (String, HashMap<String, String>) {
+    let Some((path, query)) = raw_path.split_once('?') else {
+        return (raw_path.to_string(), HashMap::new());
+    };
+
+    let mut parsed = HashMap::new();
+    for pair in query.split('&').filter(|segment| !segment.is_empty()) {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        if key.is_empty() {
+            continue;
+        }
+        parsed.insert(key.to_string(), value.to_string());
     }
 
-    Some(ParsedRequest { method, path })
+    (path.to_string(), parsed)
 }
 
 pub fn serve_static(app: &App, path: &str) -> Vec<u8> {
@@ -166,9 +185,10 @@ pub fn handle_client(mut stream: TcpStream, app: App) {
         }
         ("GET", path) if session_route_id(path, "/export").is_some() => {
             let session_id = session_route_id(path, "/export").unwrap_or_default();
+            let export_rules = ExportAlertRules::from_query(&req.query);
             let export = {
                 let state = app.state.lock().unwrap_or_else(|e| e.into_inner());
-                get_session_export(&state, session_id)
+                get_session_export(&state, session_id, Some(export_rules))
             };
             match export {
                 Some(export) => {
@@ -578,6 +598,77 @@ mod tests {
                 .map(|alerts| alerts.len()),
             Some(2)
         );
+    }
+
+    #[test]
+    fn test_handle_client_session_export_uses_query_alert_rules() {
+        use crate::state::append_event;
+        use crate::types::Event;
+
+        let app = make_test_app();
+        append_event(
+            &app,
+            Event {
+                id: "e1".to_string(),
+                agent_id: "a1".to_string(),
+                event: "token_usage".to_string(),
+                status: "ok".to_string(),
+                latency_ms: None,
+                message: "tokens +25000".to_string(),
+                metadata: serde_json::json!({
+                    "tokenUsage": { "totalTokens": 25000 }
+                }),
+                timestamp: "2025-01-01T00:00:00Z".to_string(),
+                received_at: "2025-01-01T00:00:00Z".to_string(),
+                model: String::new(),
+                is_sidechain: false,
+                session_id: "sess-abc".to_string(),
+                cwd: String::new(),
+            },
+        );
+        append_event(
+            &app,
+            Event {
+                id: "e2".to_string(),
+                agent_id: "a1".to_string(),
+                event: "tool_warning".to_string(),
+                status: "warning".to_string(),
+                latency_ms: None,
+                message: "warn".to_string(),
+                metadata: serde_json::json!({}),
+                timestamp: "2025-01-01T00:00:01Z".to_string(),
+                received_at: "2025-01-01T00:00:01Z".to_string(),
+                model: String::new(),
+                is_sidechain: false,
+                session_id: "sess-abc".to_string(),
+                cwd: String::new(),
+            },
+        );
+
+        let (addr, handle) = spawn_test_server(app);
+        let resp = http_request(
+            &addr,
+            "GET /api/sessions/sess-abc/export?costUsdThreshold=1&tokenTotalThreshold=50000&warningCountThreshold=2 HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        );
+        handle.join().unwrap();
+
+        assert!(resp.contains("200 OK"));
+
+        let body: serde_json::Value = serde_json::from_str(response_body(&resp)).unwrap();
+        assert_eq!(body["context"]["risk"]["needsAttention"], false);
+        assert_eq!(
+            body["context"]["risk"]["needsAttentionReasons"]
+                .as_array()
+                .map(|reasons| reasons.len()),
+            Some(0)
+        );
+        assert_eq!(
+            body["context"]["alerts"]
+                .as_array()
+                .map(|alerts| alerts.len()),
+            Some(1)
+        );
+        assert_eq!(body["context"]["alerts"][0]["source"], "raw");
     }
 
     #[test]

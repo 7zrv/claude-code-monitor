@@ -1,4 +1,5 @@
 use serde_json::json;
+use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
@@ -20,6 +21,66 @@ const NEEDS_ATTENTION_FAILED_SCORE: u64 = 400;
 const NEEDS_ATTENTION_STUCK_SCORE: u64 = 300;
 const NEEDS_ATTENTION_WARNING_SCORE: u64 = 200;
 const NEEDS_ATTENTION_COST_SPIKE_SCORE: u64 = 100;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ExportAlertRules {
+    pub cost_usd_threshold: f64,
+    pub token_total_threshold: u64,
+    pub warning_count_threshold: u64,
+}
+
+impl Default for ExportAlertRules {
+    fn default() -> Self {
+        Self {
+            cost_usd_threshold: ALERT_COST_USD_THRESHOLD,
+            token_total_threshold: ALERT_TOKEN_TOTAL_THRESHOLD,
+            warning_count_threshold: ALERT_WARNING_COUNT_THRESHOLD,
+        }
+    }
+}
+
+impl ExportAlertRules {
+    pub fn from_query(query: &HashMap<String, String>) -> Self {
+        Self {
+            cost_usd_threshold: parse_non_negative_f64(
+                query.get("costUsdThreshold"),
+                ALERT_COST_USD_THRESHOLD,
+            ),
+            token_total_threshold: parse_rounded_u64(
+                query.get("tokenTotalThreshold"),
+                ALERT_TOKEN_TOTAL_THRESHOLD,
+                0,
+            ),
+            warning_count_threshold: parse_rounded_u64(
+                query.get("warningCountThreshold"),
+                ALERT_WARNING_COUNT_THRESHOLD,
+                1,
+            ),
+        }
+    }
+}
+
+fn parse_non_negative_f64(value: Option<&String>, fallback: f64) -> f64 {
+    value
+        .and_then(|raw| raw.parse::<f64>().ok())
+        .filter(|parsed| parsed.is_finite() && *parsed >= 0.0)
+        .unwrap_or(fallback)
+}
+
+fn parse_rounded_u64(value: Option<&String>, fallback: u64, minimum: u64) -> u64 {
+    value
+        .and_then(|raw| raw.parse::<f64>().ok())
+        .filter(|parsed| parsed.is_finite() && *parsed >= 0.0)
+        .and_then(|parsed| {
+            let rounded = parsed.round();
+            if rounded > u64::MAX as f64 {
+                None
+            } else {
+                Some((rounded as u64).max(minimum))
+            }
+        })
+        .unwrap_or(fallback)
+}
 
 fn elapsed_secs_from(last_seen: &str, now: OffsetDateTime) -> Option<i64> {
     let parsed = OffsetDateTime::parse(last_seen, &Rfc3339).ok()?;
@@ -144,11 +205,12 @@ fn session_risk_for_export(
     summary: &SessionRow,
     agents: &[&AgentRow],
     now: OffsetDateTime,
+    rules: ExportAlertRules,
 ) -> SessionExportRisk {
     let session_state = session_state_for_export(summary, agents, now);
     let warning: u64 = agents.iter().map(|agent| agent.warning).sum();
-    let is_cost_spike = summary.cost_usd >= ALERT_COST_USD_THRESHOLD
-        || summary.token_total >= ALERT_TOKEN_TOTAL_THRESHOLD;
+    let is_cost_spike = summary.cost_usd >= rules.cost_usd_threshold
+        || summary.token_total >= rules.token_total_threshold;
     let mut needs_attention_reasons = Vec::new();
 
     if session_state == "failed" {
@@ -157,7 +219,7 @@ fn session_risk_for_export(
     if session_state == "stuck" {
         needs_attention_reasons.push("stuck".to_string());
     }
-    if warning >= ALERT_WARNING_COUNT_THRESHOLD {
+    if warning >= rules.warning_count_threshold {
         needs_attention_reasons.push("warning".to_string());
     }
     if is_cost_spike {
@@ -181,16 +243,6 @@ fn session_risk_for_export(
         needs_attention_reasons,
         is_cost_spike,
     }
-}
-
-fn raw_alert_session_id(state: &State, alert: &AlertRow) -> Option<String> {
-    state.by_agent.get(&alert.agent_id).and_then(|agent| {
-        if agent.session_id.is_empty() {
-            None
-        } else {
-            Some(agent.session_id.clone())
-        }
-    })
 }
 
 fn derived_export_alert(
@@ -240,30 +292,24 @@ fn derived_export_alert(
 }
 
 fn linked_alerts_for_export(
-    state: &State,
+    alerts_source: &[AlertRow],
     summary: &SessionRow,
     risk: &SessionExportRisk,
 ) -> Vec<SessionExportAlert> {
     let session_id = summary.session_id.as_str();
-    let mut alerts: Vec<SessionExportAlert> = state
-        .alerts
+    let mut alerts: Vec<SessionExportAlert> = alerts_source
         .iter()
-        .filter_map(|alert| {
-            let linked_session_id = raw_alert_session_id(state, alert)?;
-            if linked_session_id != session_id {
-                return None;
-            }
-            Some(SessionExportAlert {
-                id: alert.id.clone(),
-                source: "raw".to_string(),
-                severity: alert.severity.clone(),
-                event: alert.event.clone(),
-                message: alert.message.clone(),
-                created_at: alert.created_at.clone(),
-                agent_id: alert.agent_id.clone(),
-                session_id: linked_session_id,
-                derived_reason: None,
-            })
+        .filter(|alert| alert.session_id == session_id)
+        .map(|alert| SessionExportAlert {
+            id: alert.id.clone(),
+            source: "raw".to_string(),
+            severity: alert.severity.clone(),
+            event: alert.event.clone(),
+            message: alert.message.clone(),
+            created_at: alert.created_at.clone(),
+            agent_id: alert.agent_id.clone(),
+            session_id: alert.session_id.clone(),
+            derived_reason: None,
         })
         .collect();
 
@@ -287,11 +333,20 @@ fn linked_alerts_for_export(
     alerts
 }
 
-pub fn get_session_export(state: &State, session_id: &str) -> Option<SessionExport> {
+pub fn get_session_export(
+    state: &State,
+    session_id: &str,
+    rules: Option<ExportAlertRules>,
+) -> Option<SessionExport> {
     let summary = state.by_session.get(session_id)?.clone();
     let agents = session_agent_rows(state, &summary);
-    let risk = session_risk_for_export(&summary, &agents, OffsetDateTime::now_utc());
-    let alerts = linked_alerts_for_export(state, &summary, &risk);
+    let risk = session_risk_for_export(
+        &summary,
+        &agents,
+        OffsetDateTime::now_utc(),
+        rules.unwrap_or_default(),
+    );
+    let alerts = linked_alerts_for_export(&state.alerts, &summary, &risk);
     Some(SessionExport {
         exported_at: now_iso(),
         summary,
@@ -617,6 +672,7 @@ pub fn append_event(app: &App, evt: Event) {
                     id: format!("a{}", app.event_seq.fetch_add(1, Ordering::Relaxed)),
                     severity: evt.status.clone(),
                     agent_id: evt.agent_id.clone(),
+                    session_id: evt.session_id.clone(),
                     event: evt.event.clone(),
                     message: if evt.message.is_empty() {
                         "No message".to_string()
@@ -2077,7 +2133,12 @@ mod tests {
             display_name: String::new(),
             display_name_from_user: false,
         };
-        let risk = session_risk_for_export(&summary, &[&agent], parse_time("2025-01-01T00:12:30Z"));
+        let risk = session_risk_for_export(
+            &summary,
+            &[&agent],
+            parse_time("2025-01-01T00:12:30Z"),
+            ExportAlertRules::default(),
+        );
         assert_eq!(risk.session_state, "stuck");
         assert_eq!(
             risk.needs_attention_reasons,
@@ -2089,6 +2150,49 @@ mod tests {
         );
         assert_eq!(risk.needs_attention_rank, 600);
         assert!(risk.is_cost_spike);
+    }
+
+    #[test]
+    fn test_session_risk_for_export_uses_custom_thresholds() {
+        let summary = SessionRow {
+            session_id: "sess-1".to_string(),
+            last_seen: "2025-01-01T00:10:00Z".to_string(),
+            token_total: 25_000,
+            cost_usd: 0.8,
+            agent_ids: vec!["a1".to_string()],
+        };
+        let agent = AgentRow {
+            agent_id: "a1".to_string(),
+            last_seen: "2025-01-01T00:10:00Z".to_string(),
+            total: 3,
+            ok: 2,
+            warning: 1,
+            error: 0,
+            token_total: 25_000,
+            cost_usd: 0.8,
+            last_event: "heartbeat".to_string(),
+            latency_ms: None,
+            model: String::new(),
+            is_sidechain: false,
+            session_id: "sess-1".to_string(),
+            tool_use_counts: std::collections::HashMap::new(),
+            display_name: String::new(),
+            display_name_from_user: false,
+        };
+        let risk = session_risk_for_export(
+            &summary,
+            &[&agent],
+            parse_time("2025-01-01T00:12:30Z"),
+            ExportAlertRules {
+                cost_usd_threshold: 1.0,
+                token_total_threshold: 30_000,
+                warning_count_threshold: 2,
+            },
+        );
+        assert_eq!(risk.session_state, "stuck");
+        assert_eq!(risk.needs_attention_reasons, vec!["stuck".to_string()]);
+        assert_eq!(risk.needs_attention_rank, NEEDS_ATTENTION_STUCK_SCORE);
+        assert!(!risk.is_cost_spike);
     }
 
     #[test]
@@ -2119,9 +2223,19 @@ mod tests {
             id: "alert-1".to_string(),
             severity: "warning".to_string(),
             agent_id: "a1".to_string(),
+            session_id: "sess-1".to_string(),
             event: "tool_warning".to_string(),
             message: "warn".to_string(),
             created_at: "2025-01-01T00:10:01Z".to_string(),
+        });
+        state.alerts.push(AlertRow {
+            id: "alert-2".to_string(),
+            severity: "warning".to_string(),
+            agent_id: "a1".to_string(),
+            session_id: "sess-2".to_string(),
+            event: "tool_warning".to_string(),
+            message: "wrong session".to_string(),
+            created_at: "2025-01-01T00:10:02Z".to_string(),
         });
 
         let summary = SessionRow {
@@ -2132,11 +2246,17 @@ mod tests {
             agent_ids: vec!["a1".to_string()],
         };
         let agents = session_agent_rows(&state, &summary);
-        let risk = session_risk_for_export(&summary, &agents, parse_time("2025-01-01T00:12:30Z"));
-        let alerts = linked_alerts_for_export(&state, &summary, &risk);
+        let risk = session_risk_for_export(
+            &summary,
+            &agents,
+            parse_time("2025-01-01T00:12:30Z"),
+            ExportAlertRules::default(),
+        );
+        let alerts = linked_alerts_for_export(&state.alerts, &summary, &risk);
 
         assert_eq!(alerts.len(), 3);
         assert_eq!(alerts[0].source, "raw");
+        assert_eq!(alerts[0].session_id, "sess-1");
         assert!(alerts
             .iter()
             .any(|alert| alert.derived_reason.as_deref() == Some("stuck")));

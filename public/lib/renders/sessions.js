@@ -1,5 +1,6 @@
 import { escapeHtml, relativeTime, statusPill } from '../utils.js';
 import { displayNameFor } from '../agent-display.js';
+import { sanitizeAlertRules } from '../alert-rules.js';
 
 const REASON_LABELS = {
   failed: '오류 발생',
@@ -239,9 +240,15 @@ function sanitizeExportSegment(value) {
   return safe || 'detail';
 }
 
-export function getSessionExportAttrs(sessionId) {
+export function getSessionExportAttrs(sessionId, alertRules = null) {
+  const resolvedRules = sanitizeAlertRules(alertRules || {});
+  const query = new URLSearchParams({
+    costUsdThreshold: String(resolvedRules.costUsdThreshold),
+    tokenTotalThreshold: String(resolvedRules.tokenTotalThreshold),
+    warningCountThreshold: String(resolvedRules.warningCountThreshold)
+  });
   return {
-    href: `/api/sessions/${encodeURIComponent(sessionId)}/export`,
+    href: `/api/sessions/${encodeURIComponent(sessionId)}/export?${query.toString()}`,
     download: `session-${sanitizeExportSegment(sessionId)}.json`
   };
 }

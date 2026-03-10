@@ -64,6 +64,7 @@ pub struct AlertRow {
     pub id: String,
     pub severity: String,
     pub agent_id: String,
+    pub session_id: String,
     pub event: String,
     pub message: String,
     pub created_at: String,
@@ -191,4 +192,5 @@ pub struct Snapshot {
 pub struct ParsedRequest {
     pub method: String,
     pub path: String,
+    pub query: HashMap<String, String>,
 }
