@@ -492,9 +492,9 @@ mod tests {
                 event: "token_usage".to_string(),
                 status: "ok".to_string(),
                 latency_ms: None,
-                message: "tokens +200".to_string(),
+                message: "tokens +25000".to_string(),
                 metadata: serde_json::json!({
-                    "tokenUsage": { "totalTokens": 200 }
+                    "tokenUsage": { "totalTokens": 25000 }
                 }),
                 timestamp: "2025-01-01T00:00:00Z".to_string(),
                 received_at: "2025-01-01T00:00:00Z".to_string(),
@@ -524,6 +524,24 @@ mod tests {
                 cwd: String::new(),
             },
         );
+        append_event(
+            &app,
+            Event {
+                id: "e3".to_string(),
+                agent_id: "a1".to_string(),
+                event: "tool_warning".to_string(),
+                status: "warning".to_string(),
+                latency_ms: None,
+                message: "warn".to_string(),
+                metadata: serde_json::json!({}),
+                timestamp: "2025-01-01T00:00:02Z".to_string(),
+                received_at: "2025-01-01T00:00:02Z".to_string(),
+                model: String::new(),
+                is_sidechain: false,
+                session_id: "sess-abc".to_string(),
+                cwd: String::new(),
+            },
+        );
 
         let (addr, handle) = spawn_test_server(app);
         let resp = http_request(
@@ -536,10 +554,10 @@ mod tests {
 
         let body: serde_json::Value = serde_json::from_str(response_body(&resp)).unwrap();
         assert_eq!(body["summary"]["sessionId"], "sess-abc");
-        assert_eq!(body["summary"]["tokenTotal"], 200);
+        assert_eq!(body["summary"]["tokenTotal"], 25000);
         assert_eq!(
             body["events"].as_array().map(|events| events.len()),
-            Some(2)
+            Some(3)
         );
         assert_eq!(
             body["summary"]["agentIds"].as_array().map(|ids| ids.len()),
@@ -547,6 +565,19 @@ mod tests {
         );
         assert!(body["summary"]["costUsd"].as_f64().unwrap_or_default() > 0.0);
         assert!(body["exportedAt"].as_str().is_some());
+        assert_eq!(body["context"]["risk"]["needsAttention"], true);
+        let reasons = body["context"]["risk"]["needsAttentionReasons"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        assert!(reasons.iter().any(|reason| reason == "warning"));
+        assert!(reasons.iter().any(|reason| reason == "cost_spike"));
+        assert_eq!(
+            body["context"]["alerts"]
+                .as_array()
+                .map(|alerts| alerts.len()),
+            Some(2)
+        );
     }
 
     #[test]

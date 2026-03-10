@@ -4,14 +4,22 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 use crate::types::{
-    AgentRow, AlertRow, App, Event, HourBucket, SessionExport, SessionRow, Snapshot, SourceRow,
-    State, ToolCallStat, WorkflowRow,
+    AgentRow, AlertRow, App, Event, HourBucket, SessionExport, SessionExportAlert,
+    SessionExportContext, SessionExportRisk, SessionRow, Snapshot, SourceRow, State, ToolCallStat,
+    WorkflowRow,
 };
 use crate::utils::now_iso;
 
 const ACTIVE_WINDOW_SECS: i64 = 30;
 const STUCK_WINDOW_SECS: i64 = 120;
 const COMPLETED_FALLBACK_WINDOW_SECS: i64 = 900;
+const ALERT_WARNING_COUNT_THRESHOLD: u64 = 1;
+const ALERT_COST_USD_THRESHOLD: f64 = 0.5;
+const ALERT_TOKEN_TOTAL_THRESHOLD: u64 = 20_000;
+const NEEDS_ATTENTION_FAILED_SCORE: u64 = 400;
+const NEEDS_ATTENTION_STUCK_SCORE: u64 = 300;
+const NEEDS_ATTENTION_WARNING_SCORE: u64 = 200;
+const NEEDS_ATTENTION_COST_SPIKE_SCORE: u64 = 100;
 
 fn elapsed_secs_from(last_seen: &str, now: OffsetDateTime) -> Option<i64> {
     let parsed = OffsetDateTime::parse(last_seen, &Rfc3339).ok()?;
@@ -95,11 +103,199 @@ pub fn get_session_events(state: &State, session_id: &str) -> Vec<Event> {
         .unwrap_or_default()
 }
 
+fn session_agent_rows<'a>(state: &'a State, summary: &'a SessionRow) -> Vec<&'a AgentRow> {
+    summary
+        .agent_ids
+        .iter()
+        .filter_map(|agent_id| state.by_agent.get(agent_id))
+        .filter(|agent| agent.session_id == summary.session_id)
+        .collect()
+}
+
+fn session_state_for_export(
+    summary: &SessionRow,
+    agents: &[&AgentRow],
+    now: OffsetDateTime,
+) -> String {
+    let total: u64 = agents.iter().map(|agent| agent.total).sum();
+    let error: u64 = agents.iter().map(|agent| agent.error).sum();
+    let has_terminal_hint = agents
+        .iter()
+        .any(|agent| is_terminal_event_hint(&agent.last_event));
+    let elapsed = elapsed_secs_from(&summary.last_seen, now);
+
+    if error > 0 {
+        "failed".to_string()
+    } else if total == 0 || elapsed.is_none() {
+        "idle".to_string()
+    } else {
+        match elapsed {
+            Some(s) if s < ACTIVE_WINDOW_SECS => "active".to_string(),
+            Some(s) if has_terminal_hint && s >= STUCK_WINDOW_SECS => "completed".to_string(),
+            Some(s) if s >= COMPLETED_FALLBACK_WINDOW_SECS => "completed".to_string(),
+            Some(s) if s >= STUCK_WINDOW_SECS => "stuck".to_string(),
+            Some(_) => "idle".to_string(),
+            None => "idle".to_string(),
+        }
+    }
+}
+
+fn session_risk_for_export(
+    summary: &SessionRow,
+    agents: &[&AgentRow],
+    now: OffsetDateTime,
+) -> SessionExportRisk {
+    let session_state = session_state_for_export(summary, agents, now);
+    let warning: u64 = agents.iter().map(|agent| agent.warning).sum();
+    let is_cost_spike = summary.cost_usd >= ALERT_COST_USD_THRESHOLD
+        || summary.token_total >= ALERT_TOKEN_TOTAL_THRESHOLD;
+    let mut needs_attention_reasons = Vec::new();
+
+    if session_state == "failed" {
+        needs_attention_reasons.push("failed".to_string());
+    }
+    if session_state == "stuck" {
+        needs_attention_reasons.push("stuck".to_string());
+    }
+    if warning >= ALERT_WARNING_COUNT_THRESHOLD {
+        needs_attention_reasons.push("warning".to_string());
+    }
+    if is_cost_spike {
+        needs_attention_reasons.push("cost_spike".to_string());
+    }
+
+    let needs_attention_rank = needs_attention_reasons.iter().fold(0_u64, |sum, reason| {
+        sum + match reason.as_str() {
+            "failed" => NEEDS_ATTENTION_FAILED_SCORE,
+            "stuck" => NEEDS_ATTENTION_STUCK_SCORE,
+            "warning" => NEEDS_ATTENTION_WARNING_SCORE,
+            "cost_spike" => NEEDS_ATTENTION_COST_SPIKE_SCORE,
+            _ => 0,
+        }
+    });
+
+    SessionExportRisk {
+        session_state,
+        needs_attention: needs_attention_rank > 0,
+        needs_attention_rank,
+        needs_attention_reasons,
+        is_cost_spike,
+    }
+}
+
+fn raw_alert_session_id(state: &State, alert: &AlertRow) -> Option<String> {
+    state.by_agent.get(&alert.agent_id).and_then(|agent| {
+        if agent.session_id.is_empty() {
+            None
+        } else {
+            Some(agent.session_id.clone())
+        }
+    })
+}
+
+fn derived_export_alert(
+    summary: &SessionRow,
+    _risk: &SessionExportRisk,
+    reason: &str,
+) -> Option<SessionExportAlert> {
+    match reason {
+        "failed" => Some(SessionExportAlert {
+            id: format!("derived:failed:{}", summary.session_id),
+            source: "derived-session".to_string(),
+            severity: "error".to_string(),
+            event: "SessionFailed".to_string(),
+            message: "Session entered failed state".to_string(),
+            created_at: summary.last_seen.clone(),
+            agent_id: String::new(),
+            session_id: summary.session_id.clone(),
+            derived_reason: Some("failed".to_string()),
+        }),
+        "stuck" => Some(SessionExportAlert {
+            id: format!("derived:stuck:{}", summary.session_id),
+            source: "derived-session".to_string(),
+            severity: "warning".to_string(),
+            event: "SessionStuck".to_string(),
+            message: "No session activity for 2m+ without a terminal event".to_string(),
+            created_at: summary.last_seen.clone(),
+            agent_id: String::new(),
+            session_id: summary.session_id.clone(),
+            derived_reason: Some("stuck".to_string()),
+        }),
+        "cost_spike" => Some(SessionExportAlert {
+            id: format!("derived:cost_spike:{}", summary.session_id),
+            source: "derived-session".to_string(),
+            severity: "warning".to_string(),
+            event: "SessionCostSpike".to_string(),
+            message: format!(
+                "Configured cost/token threshold exceeded (${:.4}, {} tokens)",
+                summary.cost_usd, summary.token_total
+            ),
+            created_at: summary.last_seen.clone(),
+            agent_id: String::new(),
+            session_id: summary.session_id.clone(),
+            derived_reason: Some("cost_spike".to_string()),
+        }),
+        _ => None,
+    }
+}
+
+fn linked_alerts_for_export(
+    state: &State,
+    summary: &SessionRow,
+    risk: &SessionExportRisk,
+) -> Vec<SessionExportAlert> {
+    let session_id = summary.session_id.as_str();
+    let mut alerts: Vec<SessionExportAlert> = state
+        .alerts
+        .iter()
+        .filter_map(|alert| {
+            let linked_session_id = raw_alert_session_id(state, alert)?;
+            if linked_session_id != session_id {
+                return None;
+            }
+            Some(SessionExportAlert {
+                id: alert.id.clone(),
+                source: "raw".to_string(),
+                severity: alert.severity.clone(),
+                event: alert.event.clone(),
+                message: alert.message.clone(),
+                created_at: alert.created_at.clone(),
+                agent_id: alert.agent_id.clone(),
+                session_id: linked_session_id,
+                derived_reason: None,
+            })
+        })
+        .collect();
+
+    alerts.extend(
+        risk.needs_attention_reasons
+            .iter()
+            .filter(|reason| matches!(reason.as_str(), "failed" | "stuck" | "cost_spike"))
+            .filter_map(|reason| derived_export_alert(summary, risk, reason)),
+    );
+
+    alerts.sort_by(|a, b| {
+        b.created_at
+            .cmp(&a.created_at)
+            .then_with(|| {
+                let a_rank = if a.source == "raw" { 0 } else { 1 };
+                let b_rank = if b.source == "raw" { 0 } else { 1 };
+                a_rank.cmp(&b_rank)
+            })
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    alerts
+}
+
 pub fn get_session_export(state: &State, session_id: &str) -> Option<SessionExport> {
     let summary = state.by_session.get(session_id)?.clone();
+    let agents = session_agent_rows(state, &summary);
+    let risk = session_risk_for_export(&summary, &agents, OffsetDateTime::now_utc());
+    let alerts = linked_alerts_for_export(state, &summary, &risk);
     Some(SessionExport {
         exported_at: now_iso(),
         summary,
+        context: SessionExportContext { risk, alerts },
         events: get_session_events(state, session_id),
     })
 }
@@ -1852,6 +2048,101 @@ mod tests {
         assert_eq!(snap.hourly_buckets.len(), 1);
         assert_eq!(snap.hourly_buckets[0].hour_key, "2025-01-01T14");
         assert_eq!(snap.hourly_buckets[0].token_total, 500);
+    }
+
+    #[test]
+    fn test_session_risk_for_export_matches_stuck_warning_and_cost_spike() {
+        let summary = SessionRow {
+            session_id: "sess-1".to_string(),
+            last_seen: "2025-01-01T00:10:00Z".to_string(),
+            token_total: 25_000,
+            cost_usd: 0.8,
+            agent_ids: vec!["a1".to_string()],
+        };
+        let agent = AgentRow {
+            agent_id: "a1".to_string(),
+            last_seen: "2025-01-01T00:10:00Z".to_string(),
+            total: 3,
+            ok: 2,
+            warning: 1,
+            error: 0,
+            token_total: 25_000,
+            cost_usd: 0.8,
+            last_event: "heartbeat".to_string(),
+            latency_ms: None,
+            model: String::new(),
+            is_sidechain: false,
+            session_id: "sess-1".to_string(),
+            tool_use_counts: std::collections::HashMap::new(),
+            display_name: String::new(),
+            display_name_from_user: false,
+        };
+        let risk = session_risk_for_export(&summary, &[&agent], parse_time("2025-01-01T00:12:30Z"));
+        assert_eq!(risk.session_state, "stuck");
+        assert_eq!(
+            risk.needs_attention_reasons,
+            vec![
+                "stuck".to_string(),
+                "warning".to_string(),
+                "cost_spike".to_string()
+            ]
+        );
+        assert_eq!(risk.needs_attention_rank, 600);
+        assert!(risk.is_cost_spike);
+    }
+
+    #[test]
+    fn test_linked_alerts_for_export_includes_raw_and_derived_alerts() {
+        let mut state = State::default();
+        state.by_agent.insert(
+            "a1".to_string(),
+            AgentRow {
+                agent_id: "a1".to_string(),
+                last_seen: "2025-01-01T00:10:00Z".to_string(),
+                total: 3,
+                ok: 2,
+                warning: 1,
+                error: 0,
+                token_total: 25_000,
+                cost_usd: 0.8,
+                last_event: "heartbeat".to_string(),
+                latency_ms: None,
+                model: String::new(),
+                is_sidechain: false,
+                session_id: "sess-1".to_string(),
+                tool_use_counts: std::collections::HashMap::new(),
+                display_name: String::new(),
+                display_name_from_user: false,
+            },
+        );
+        state.alerts.push(AlertRow {
+            id: "alert-1".to_string(),
+            severity: "warning".to_string(),
+            agent_id: "a1".to_string(),
+            event: "tool_warning".to_string(),
+            message: "warn".to_string(),
+            created_at: "2025-01-01T00:10:01Z".to_string(),
+        });
+
+        let summary = SessionRow {
+            session_id: "sess-1".to_string(),
+            last_seen: "2025-01-01T00:10:00Z".to_string(),
+            token_total: 25_000,
+            cost_usd: 0.8,
+            agent_ids: vec!["a1".to_string()],
+        };
+        let agents = session_agent_rows(&state, &summary);
+        let risk = session_risk_for_export(&summary, &agents, parse_time("2025-01-01T00:12:30Z"));
+        let alerts = linked_alerts_for_export(&state, &summary, &risk);
+
+        assert_eq!(alerts.len(), 3);
+        assert_eq!(alerts[0].source, "raw");
+        assert!(alerts
+            .iter()
+            .any(|alert| alert.derived_reason.as_deref() == Some("stuck")));
+        assert!(alerts
+            .iter()
+            .any(|alert| alert.derived_reason.as_deref() == Some("cost_spike")));
     }
 
     #[test]
