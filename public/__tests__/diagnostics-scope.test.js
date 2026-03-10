@@ -1,6 +1,11 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { diagnosticsEmptyMessage, diagnosticsScopeLabel, selectDiagnosticsEvents } from '../lib/diagnostics-scope.js';
+import {
+  diagnosticsEmptyMessage,
+  diagnosticsScopeLabel,
+  mergeSessionEvents,
+  selectDiagnosticsEvents
+} from '../lib/diagnostics-scope.js';
 
 function makeSnapshot(events = []) {
   return { recent: events };
@@ -15,12 +20,16 @@ describe('selectDiagnosticsEvents', () => {
     assert.equal(result.source, 'global');
   });
 
-  it('uses cached session events when available', () => {
-    const cache = new Map([['s1', [{ id: 'cached-1', sessionId: 's1' }]]]);
-    const result = selectDiagnosticsEvents(makeSnapshot([{ id: '1', sessionId: 's1' }]), 's1', cache);
+  it('merges cached session events with the live snapshot when available', () => {
+    const cache = new Map([['s1', [{ id: 'cached-1', sessionId: 's1', receivedAt: '2026-03-09T10:00:00Z' }]]]);
+    const result = selectDiagnosticsEvents(
+      makeSnapshot([{ id: 'live-1', sessionId: 's1', receivedAt: '2026-03-09T10:05:00Z' }]),
+      's1',
+      cache
+    );
     assert.equal(result.isSessionScoped, true);
-    assert.equal(result.source, 'session-cache');
-    assert.deepEqual(result.events.map((event) => event.id), ['cached-1']);
+    assert.equal(result.source, 'session-merged');
+    assert.deepEqual(result.events.map((event) => event.id), ['live-1', 'cached-1']);
   });
 
   it('falls back to snapshot filtering before session events are cached', () => {
@@ -32,6 +41,24 @@ describe('selectDiagnosticsEvents', () => {
     const result = selectDiagnosticsEvents(snapshot, 's1', new Map());
     assert.equal(result.source, 'snapshot');
     assert.deepEqual(result.events.map((event) => event.id), ['1', '3']);
+  });
+});
+
+describe('mergeSessionEvents', () => {
+  it('deduplicates overlapping cache and snapshot events', () => {
+    const merged = mergeSessionEvents(
+      [{ id: 'e1', sessionId: 's1', receivedAt: '2026-03-09T10:00:00Z' }],
+      [{ id: 'e1', sessionId: 's1', receivedAt: '2026-03-09T10:00:00Z' }]
+    );
+    assert.deepEqual(merged.map((event) => event.id), ['e1']);
+  });
+
+  it('sorts merged events by newest first for the recent-events panel', () => {
+    const merged = mergeSessionEvents(
+      [{ id: 'e1', sessionId: 's1', receivedAt: '2026-03-09T10:00:00Z' }],
+      [{ id: 'e2', sessionId: 's1', receivedAt: '2026-03-09T10:01:00Z' }]
+    );
+    assert.deepEqual(merged.map((event) => event.id), ['e2', 'e1']);
   });
 });
 

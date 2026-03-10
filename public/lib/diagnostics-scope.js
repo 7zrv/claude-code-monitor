@@ -2,6 +2,32 @@ function filterSessionEvents(events = [], sessionId = '') {
   return (Array.isArray(events) ? events : []).filter((event) => event.sessionId === sessionId);
 }
 
+function eventIdentity(event = {}) {
+  return String(event.id || `${event.receivedAt || ''}:${event.agentId || ''}:${event.event || ''}:${event.message || ''}`);
+}
+
+function eventTimestamp(event = {}) {
+  const ts = new Date(event.receivedAt || '').getTime();
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+export function mergeSessionEvents(cachedEvents = [], snapshotEvents = []) {
+  const merged = new Map();
+
+  for (const event of Array.isArray(cachedEvents) ? cachedEvents : []) {
+    merged.set(eventIdentity(event), event);
+  }
+  for (const event of Array.isArray(snapshotEvents) ? snapshotEvents : []) {
+    merged.set(eventIdentity(event), event);
+  }
+
+  return [...merged.values()].sort((a, b) => {
+    const tsDelta = eventTimestamp(b) - eventTimestamp(a);
+    if (tsDelta !== 0) return tsDelta;
+    return String(b.id || '').localeCompare(String(a.id || ''));
+  });
+}
+
 export function selectDiagnosticsEvents(snapshot = {}, selectedSessionId = '', sessionEventsCache = new Map()) {
   const globalEvents = Array.isArray(snapshot.recent) ? snapshot.recent : [];
   if (!selectedSessionId) {
@@ -14,22 +40,22 @@ export function selectDiagnosticsEvents(snapshot = {}, selectedSessionId = '', s
     };
   }
 
+  const snapshotScopedEvents = filterSessionEvents(globalEvents, selectedSessionId);
   if (sessionEventsCache?.has?.(selectedSessionId)) {
     const cachedEvents = sessionEventsCache.get(selectedSessionId);
-    const resolved = Array.isArray(cachedEvents) ? cachedEvents : [];
+    const resolved = mergeSessionEvents(cachedEvents, snapshotScopedEvents);
     return {
       events: resolved,
       total: resolved.length,
       sessionId: selectedSessionId,
-      source: 'session-cache',
+      source: 'session-merged',
       isSessionScoped: true
     };
   }
 
-  const filtered = filterSessionEvents(globalEvents, selectedSessionId);
   return {
-    events: filtered,
-    total: filtered.length,
+    events: snapshotScopedEvents,
+    total: snapshotScopedEvents.length,
     sessionId: selectedSessionId,
     source: 'snapshot',
     isSessionScoped: true

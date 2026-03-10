@@ -195,6 +195,21 @@ function renderDiagnosticsPanels(selectedSession) {
   renderEventMeta(scope.total, filteredEvents.length, eventMetaEl, { scopeLabel });
 }
 
+function rememberSessionEvent(evt) {
+  const sessionId = evt?.sessionId;
+  if (!sessionId || !sessionEventsCache.has(sessionId)) return;
+
+  const current = sessionEventsCache.get(sessionId);
+  const rows = Array.isArray(current) ? current : [];
+  if (rows.some((row) => row.id === evt.id)) return;
+
+  rows.push(evt);
+  if (rows.length > 500) {
+    rows.splice(0, rows.length - 500);
+  }
+  sessionEventsCache.set(sessionId, rows);
+}
+
 function renderSnapshot(snapshot) {
   snapshotState = snapshot;
   const empty = isEmptySnapshot(snapshot);
@@ -419,7 +434,11 @@ connectStream({
   connectionMetaEl,
   onSnapshot(snapshot) { snapshotState = snapshot; queueRender(); },
   onEvent(evt) {
-    if (snapshotState) { applyIncrementalEvent(snapshotState, evt); queueRender(); }
+    if (snapshotState) {
+      applyIncrementalEvent(snapshotState, evt);
+      rememberSessionEvent(evt);
+      queueRender();
+    }
   },
   onFallback() { loadSnapshot().then((snapshot) => renderSnapshot(snapshot)).catch(console.error); }
 });
