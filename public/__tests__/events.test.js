@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { getFilteredEvents, renderEventDetail } from '../lib/renders/events.js';
+import { getFilteredEvents, renderEventDetail, renderEventMeta } from '../lib/renders/events.js';
 
 function makeEvt(overrides = {}) {
   return {
@@ -163,5 +163,13 @@ describe('renderEventDetail', () => {
     });
     const html = renderEventDetail(evt);
     assert.ok(html.includes('event-detail-copy'), 'should include copy button');
+  });
+});
+
+describe('renderEventMeta', () => {
+  it('includes the active scope label when provided', () => {
+    const el = { textContent: '' };
+    renderEventMeta(20, 5, el, { scopeLabel: '선택 세션 sess-1 기준' });
+    assert.equal(el.textContent, 'events: 5/20 · 선택 세션 sess-1 기준');
   });
 });

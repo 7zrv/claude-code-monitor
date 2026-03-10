@@ -34,7 +34,8 @@ export function buildTimelineData(events, maxEvents = 50) {
   return grouped;
 }
 
-export function renderTimeline(events, el, tooltip, agentFilter) {
+export function renderTimeline(events, el, tooltip, agentFilter, options = {}) {
+  const { emptyMessage = 'No timeline data' } = options;
   const data = buildTimelineData(events);
 
   const agents = agentFilter && agentFilter !== 'all'
@@ -42,7 +43,7 @@ export function renderTimeline(events, el, tooltip, agentFilter) {
     : [...data.entries()];
 
   if (!agents.length) {
-    el.innerHTML = '<div class="timeline-empty">No timeline data</div>';
+    el.innerHTML = `<div class="timeline-empty">${escapeHtml(emptyMessage)}</div>`;
     return;
   }
 
