@@ -263,7 +263,7 @@ function renderSelectedSessionDetail(session) {
     return;
   }
 
-  const attrs = getSessionExportAttrs(session.sessionId);
+  const attrs = getSessionExportAttrs(session.sessionId, alertRules);
   sessionDetailExport.href = attrs.href;
   sessionDetailExport.download = attrs.download;
 

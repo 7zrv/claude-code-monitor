@@ -308,8 +308,23 @@ describe('renderSessionDetailMeta', () => {
 describe('getSessionExportAttrs', () => {
   it('builds a same-origin export link and safe filename', () => {
     const attrs = getSessionExportAttrs('sess 1/alpha');
-    assert.equal(attrs.href, '/api/sessions/sess%201%2Falpha/export');
+    assert.equal(
+      attrs.href,
+      '/api/sessions/sess%201%2Falpha/export?costUsdThreshold=0.5&tokenTotalThreshold=20000&warningCountThreshold=1'
+    );
     assert.equal(attrs.download, 'session-sess_1_alpha.json');
+  });
+
+  it('includes sanitized custom alert rules in the export link', () => {
+    const attrs = getSessionExportAttrs('sess-1', {
+      costUsdThreshold: '1.25',
+      tokenTotalThreshold: '30000.4',
+      warningCountThreshold: 2
+    });
+    assert.equal(
+      attrs.href,
+      '/api/sessions/sess-1/export?costUsdThreshold=1.25&tokenTotalThreshold=30000&warningCountThreshold=2'
+    );
   });
 
   it('falls back to a stable filename when session id is blank', () => {

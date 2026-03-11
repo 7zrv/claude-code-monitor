@@ -64,6 +64,7 @@ pub struct AlertRow {
     pub id: String,
     pub severity: String,
     pub agent_id: String,
+    pub session_id: String,
     pub event: String,
     pub message: String,
     pub created_at: String,
@@ -104,9 +105,41 @@ pub struct SessionRow {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SessionExportRisk {
+    pub session_state: String,
+    pub needs_attention: bool,
+    pub needs_attention_rank: u64,
+    pub needs_attention_reasons: Vec<String>,
+    pub is_cost_spike: bool,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionExportAlert {
+    pub id: String,
+    pub source: String,
+    pub severity: String,
+    pub event: String,
+    pub message: String,
+    pub created_at: String,
+    pub agent_id: String,
+    pub session_id: String,
+    pub derived_reason: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionExportContext {
+    pub risk: SessionExportRisk,
+    pub alerts: Vec<SessionExportAlert>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionExport {
     pub exported_at: String,
     pub summary: SessionRow,
+    pub context: SessionExportContext,
     pub events: Vec<Event>,
 }
 
@@ -159,4 +192,5 @@ pub struct Snapshot {
 pub struct ParsedRequest {
     pub method: String,
     pub path: String,
+    pub query: HashMap<String, String>,
 }
