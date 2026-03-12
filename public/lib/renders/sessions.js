@@ -2,6 +2,15 @@ import { escapeHtml, relativeTime, statusPill } from '../utils.js';
 import { displayNameFor } from '../agent-display.js';
 import { sanitizeAlertRules } from '../alert-rules.js';
 
+function sessionDisplayLabel(session = {}) {
+  return session.displayName || session.shortSessionId || session.sessionId || '';
+}
+
+function sessionSecondaryHtml(session = {}) {
+  const parts = [session.projectName, session.sessionState || 'idle', relativeTime(session.lastSeen)].filter(Boolean);
+  return `<div class="session-item-secondary">${parts.map(escapeHtml).join(' · ')}</div>`;
+}
+
 const REASON_LABELS = {
   failed: '오류 발생',
   stuck: '응답 지연',
@@ -112,9 +121,10 @@ export function renderSessionsList(sessions, root, onSelect, options = {}) {
     .map(
       (s) => `<div class="session-item${s.sessionId === selectedSessionId ? ' session-item--selected' : ''}" data-session-id="${escapeHtml(s.sessionId)}">
         <div class="session-item-main">
-          <div class="session-item-id">${escapeHtml(s.sessionId)}</div>
+          <div class="session-item-name">${escapeHtml(sessionDisplayLabel(s))}</div>
           ${statusPill(s.sessionState || 'idle')}
         </div>
+        ${sessionSecondaryHtml(s)}
         <div class="session-item-meta">
           ${sessionMetaHtml(s)}
         </div>
@@ -220,6 +230,10 @@ export function renderSessionDetailMeta(session, root, options = {}) {
         ${summaryStat('Cost', `$${Number(session.costUsd || 0).toFixed(4)}`)}
         ${summaryStat('Agents', String(Array.isArray(session.agentIds) ? session.agentIds.length : 0))}
         ${summaryStat('Attention Rank', String(Number(session.needsAttentionRank || 0)))}
+      </div>
+      <div class="session-detail-section">
+        <h3>Session ID</h3>
+        <span class="session-detail-session-id" title="${escapeHtml(session.sessionId)}">${escapeHtml(session.sessionId)}</span>
       </div>
       <div class="session-detail-section">
         <h3>Participants</h3>

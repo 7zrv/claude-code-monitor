@@ -163,6 +163,41 @@ describe('renderSessionsList', () => {
     root = makeRoot();
   });
 
+  it('renders displayName as the primary label instead of raw sessionId', () => {
+    const sessions = [
+      { ...baseSessions[0], displayName: '로그인 버그 수정', projectName: 'my-project', shortSessionId: 's1short' }
+    ];
+    renderSessionsList(sessions, root, () => {});
+    assert.ok(root.innerHTML.includes('로그인 버그 수정'));
+    assert.ok(root.innerHTML.includes('session-item-name'));
+    assert.ok(!root.innerHTML.includes('session-item-id'));
+  });
+
+  it('falls back to shortSessionId when displayName is empty', () => {
+    const sessions = [
+      { ...baseSessions[0], displayName: '', shortSessionId: 'abcd1234' }
+    ];
+    renderSessionsList(sessions, root, () => {});
+    assert.ok(root.innerHTML.includes('abcd1234'));
+  });
+
+  it('falls back to sessionId when both displayName and shortSessionId are empty', () => {
+    const sessions = [
+      { ...baseSessions[0], displayName: '', shortSessionId: '' }
+    ];
+    renderSessionsList(sessions, root, () => {});
+    assert.ok(root.innerHTML.includes('s1'));
+  });
+
+  it('renders secondary label with project name, state, and last activity', () => {
+    const sessions = [
+      { ...baseSessions[0], displayName: '버그 수정', projectName: 'claude-monitor' }
+    ];
+    renderSessionsList(sessions, root, () => {});
+    assert.ok(root.innerHTML.includes('session-item-secondary'));
+    assert.ok(root.innerHTML.includes('claude-monitor'));
+  });
+
   it('renders session items for each session', () => {
     renderSessionsList(baseSessions, root, () => {});
     assert.ok(root.innerHTML.includes('s1'));
@@ -269,6 +304,21 @@ describe('renderSessionDetailMeta', () => {
     assert.ok(root.innerHTML.includes('Attention Rank'));
     assert.ok(root.innerHTML.includes('오류 발생'));
     assert.ok(root.innerHTML.includes('data-status="failed"'));
+  });
+
+  it('renders full session_id as copyable meta info in the detail summary', () => {
+    renderSessionDetailMeta({
+      sessionId: 'fdab33ec-c234-4fe5-a84d-f35eee9af6f4',
+      sessionState: 'active',
+      lastSeen: '2025-01-01T00:00:10Z',
+      tokenTotal: 500,
+      costUsd: 0.05,
+      agentIds: ['a1'],
+      needsAttentionRank: 0,
+      needsAttentionReasons: []
+    }, root);
+    assert.ok(root.innerHTML.includes('fdab33ec-c234-4fe5-a84d-f35eee9af6f4'));
+    assert.ok(root.innerHTML.includes('session-detail-session-id'));
   });
 
   it('renders session participants and linked alerts in the detail summary', () => {

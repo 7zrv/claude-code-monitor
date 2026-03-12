@@ -1302,13 +1302,21 @@ tr.tree-last .tree-branch::before {
   gap: 12px;
 }
 
-.session-item-id {
+.session-item-name {
   font-weight: 600;
   font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 260px;
+}
+
+.session-item-secondary {
+  font-size: 12px;
+  color: var(--chart-sublabel);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .session-item-meta {
@@ -1427,6 +1435,15 @@ tr.tree-last .tree-branch::before {
   margin: 0;
   color: var(--chart-sublabel);
   font-size: 13px;
+}
+
+.session-detail-session-id {
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--chart-sublabel);
+  word-break: break-all;
+  user-select: all;
+  cursor: text;
 }
 
 .session-detail-alert-list {
