@@ -94,6 +94,26 @@ describe('renderNeedsAttention', () => {
     assert.ok(root.innerHTML.includes('cost: $0.7500'));
   });
 
+  it('renders displayName as the primary label when provided', () => {
+    renderNeedsAttention([
+      {
+        sessionId: 'sess-uuid-1234',
+        displayName: '로그인 버그 수정',
+        sessionState: 'stuck',
+        needsAttention: true,
+        needsAttentionRank: 300,
+        needsAttentionReasons: ['stuck'],
+        lastSeen: '2025-01-01T00:00:00Z',
+        tokenTotal: 100,
+        costUsd: 0.01,
+        agentIds: []
+      }
+    ], root, () => {});
+
+    assert.ok(root.innerHTML.includes('로그인 버그 수정'));
+    assert.ok(!root.innerHTML.includes('>sess-uuid-1234<'));
+  });
+
   it('wires row click back to the existing session detail handler', () => {
     let selected = '';
     renderNeedsAttention([{ sessionId: 'sess-2', sessionState: 'failed' }], root, (sessionId) => {

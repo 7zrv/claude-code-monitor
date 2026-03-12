@@ -245,7 +245,7 @@ function renderSnapshot(snapshot) {
 }
 
 function renderSelectedSessionDetail(session) {
-  sessionDetailTitle.textContent = session?.sessionId || '선택된 세션 없음';
+  sessionDetailTitle.textContent = session?.displayName || session?.sessionId || '선택된 세션 없음';
   const hasSession = Boolean(session?.sessionId);
   const sessionAgents = hasSession
     ? (snapshotState?.agents || []).filter((agent) => agent.sessionId === session.sessionId)
