@@ -101,6 +101,11 @@ pub struct SessionRow {
     pub token_total: u64,
     pub cost_usd: f64,
     pub agent_ids: Vec<String>,
+    pub display_name: String,
+    pub project_name: String,
+    pub short_session_id: String,
+    #[serde(skip)]
+    pub display_name_locked: bool,
 }
 
 #[derive(Clone, Serialize)]
