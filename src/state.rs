@@ -451,6 +451,36 @@ pub fn extract_project_name(cwd: &str) -> &str {
         .unwrap_or("")
 }
 
+fn sanitize_message_for_display(message: &str) -> String {
+    let trimmed = message.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    let single_line = trimmed.lines().next().unwrap_or("").trim().to_string();
+    let mut chars = single_line.chars();
+    let truncated: String = chars.by_ref().take(32).collect();
+    if chars.next().is_some() {
+        format!("{}...", truncated)
+    } else {
+        truncated
+    }
+}
+
+pub fn generate_session_display_name(
+    message: &str,
+    project_name: &str,
+    short_session_id: &str,
+) -> String {
+    let sanitized = sanitize_message_for_display(message);
+    if !sanitized.is_empty() {
+        return sanitized;
+    }
+    if !project_name.is_empty() {
+        return project_name.to_string();
+    }
+    format!("Session {}", short_session_id)
+}
+
 pub fn append_event(app: &App, evt: Event) {
     {
         let mut state = app.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -596,15 +626,24 @@ pub fn append_event(app: &App, evt: Event) {
         }
 
         if !evt.session_id.is_empty() {
+            let short_id: String = evt.session_id.chars().take(8).collect();
+            let project = extract_project_name(&evt.cwd).to_string();
             let session = state
                 .by_session
                 .entry(evt.session_id.clone())
-                .or_insert(SessionRow {
-                    session_id: evt.session_id.clone(),
-                    last_seen: evt.received_at.clone(),
-                    token_total: 0,
-                    cost_usd: 0.0,
-                    agent_ids: vec![],
+                .or_insert_with(|| {
+                    let display_name = generate_session_display_name("", &project, &short_id);
+                    SessionRow {
+                        session_id: evt.session_id.clone(),
+                        last_seen: evt.received_at.clone(),
+                        token_total: 0,
+                        cost_usd: 0.0,
+                        agent_ids: vec![],
+                        display_name,
+                        project_name: project.clone(),
+                        short_session_id: short_id.clone(),
+                        display_name_locked: false,
+                    }
                 });
             session.last_seen = evt.received_at.clone();
             if token_total > 0 {
@@ -615,6 +654,26 @@ pub fn append_event(app: &App, evt: Event) {
             }
             if !session.agent_ids.contains(&evt.agent_id) {
                 session.agent_ids.push(evt.agent_id.clone());
+            }
+            if session.project_name.is_empty() && !project.is_empty() {
+                session.project_name = project.clone();
+            }
+            if (evt.event == "user_message" || evt.event == "user_request")
+                && !evt.message.is_empty()
+                && !session.display_name_locked
+            {
+                session.display_name = generate_session_display_name(
+                    &evt.message,
+                    &session.project_name,
+                    &session.short_session_id,
+                );
+                session.display_name_locked = true;
+            } else if !session.display_name_locked && !project.is_empty() {
+                session.display_name = generate_session_display_name(
+                    "",
+                    &session.project_name,
+                    &session.short_session_id,
+                );
             }
 
             let session_events = state
@@ -705,6 +764,20 @@ mod tests {
     use std::sync::atomic::AtomicU64;
     use std::sync::mpsc;
     use std::sync::{Arc, Mutex};
+
+    fn make_test_session_row(session_id: &str, last_seen: &str) -> crate::types::SessionRow {
+        crate::types::SessionRow {
+            session_id: session_id.to_string(),
+            last_seen: last_seen.to_string(),
+            token_total: 0,
+            cost_usd: 0.0,
+            agent_ids: vec![],
+            display_name: String::new(),
+            project_name: String::new(),
+            short_session_id: session_id.chars().take(8).collect(),
+            display_name_locked: false,
+        }
+    }
 
     fn make_test_app() -> App {
         App {
@@ -1576,16 +1649,11 @@ mod tests {
     #[test]
     fn test_build_snapshot_includes_sessions() {
         let mut state = State::default();
-        state.by_session.insert(
-            "sess-1".to_string(),
-            crate::types::SessionRow {
-                session_id: "sess-1".to_string(),
-                last_seen: "2025-01-01T00:00:10Z".to_string(),
-                token_total: 100,
-                cost_usd: 0.05,
-                agent_ids: vec!["a1".to_string()],
-            },
-        );
+        let mut row = make_test_session_row("sess-1", "2025-01-01T00:00:10Z");
+        row.token_total = 100;
+        row.cost_usd = 0.05;
+        row.agent_ids = vec!["a1".to_string()];
+        state.by_session.insert("sess-1".to_string(), row);
         let snap = build_snapshot(&state);
         assert_eq!(snap.sessions.len(), 1);
         assert_eq!(snap.sessions[0].session_id, "sess-1");
@@ -1600,16 +1668,9 @@ mod tests {
             ("s3", "2025-01-01T00:00:05Z"),
         ];
         for (id, last_seen) in sessions {
-            state.by_session.insert(
-                id.to_string(),
-                crate::types::SessionRow {
-                    session_id: id.to_string(),
-                    last_seen: last_seen.to_string(),
-                    token_total: 0,
-                    cost_usd: 0.0,
-                    agent_ids: vec![],
-                },
-            );
+            state
+                .by_session
+                .insert(id.to_string(), make_test_session_row(id, last_seen));
         }
         let snap = build_snapshot(&state);
         let ids: Vec<&str> = snap
@@ -1624,16 +1685,11 @@ mod tests {
     fn test_build_snapshot_sessions_limited_to_50() {
         let mut state = State::default();
         for i in 0..80 {
-            state.by_session.insert(
-                format!("s-{}", i),
-                crate::types::SessionRow {
-                    session_id: format!("s-{}", i),
-                    last_seen: format!("2025-01-01T00:{:02}:00Z", i.min(59)),
-                    token_total: 0,
-                    cost_usd: 0.0,
-                    agent_ids: vec![],
-                },
-            );
+            let id = format!("s-{}", i);
+            let last_seen = format!("2025-01-01T00:{:02}:00Z", i.min(59));
+            state
+                .by_session
+                .insert(id.clone(), make_test_session_row(&id, &last_seen));
         }
         let snap = build_snapshot(&state);
         assert_eq!(snap.sessions.len(), 50);
@@ -1644,13 +1700,7 @@ mod tests {
         let mut state = State::default();
         state.by_session.insert(
             "sess-1".to_string(),
-            crate::types::SessionRow {
-                session_id: "sess-1".to_string(),
-                last_seen: "2025-01-01T00:00:00Z".to_string(),
-                token_total: 0,
-                cost_usd: 0.0,
-                agent_ids: vec![],
-            },
+            make_test_session_row("sess-1", "2025-01-01T00:00:00Z"),
         );
         let snap = build_snapshot(&state);
         assert_eq!(snap.totals["sessions"], 1);
@@ -2108,13 +2158,10 @@ mod tests {
 
     #[test]
     fn test_session_risk_for_export_matches_stuck_warning_and_cost_spike() {
-        let summary = SessionRow {
-            session_id: "sess-1".to_string(),
-            last_seen: "2025-01-01T00:10:00Z".to_string(),
-            token_total: 25_000,
-            cost_usd: 0.8,
-            agent_ids: vec!["a1".to_string()],
-        };
+        let mut summary = make_test_session_row("sess-1", "2025-01-01T00:10:00Z");
+        summary.token_total = 25_000;
+        summary.cost_usd = 0.8;
+        summary.agent_ids = vec!["a1".to_string()];
         let agent = AgentRow {
             agent_id: "a1".to_string(),
             last_seen: "2025-01-01T00:10:00Z".to_string(),
@@ -2154,13 +2201,10 @@ mod tests {
 
     #[test]
     fn test_session_risk_for_export_uses_custom_thresholds() {
-        let summary = SessionRow {
-            session_id: "sess-1".to_string(),
-            last_seen: "2025-01-01T00:10:00Z".to_string(),
-            token_total: 25_000,
-            cost_usd: 0.8,
-            agent_ids: vec!["a1".to_string()],
-        };
+        let mut summary = make_test_session_row("sess-1", "2025-01-01T00:10:00Z");
+        summary.token_total = 25_000;
+        summary.cost_usd = 0.8;
+        summary.agent_ids = vec!["a1".to_string()];
         let agent = AgentRow {
             agent_id: "a1".to_string(),
             last_seen: "2025-01-01T00:10:00Z".to_string(),
@@ -2238,13 +2282,10 @@ mod tests {
             created_at: "2025-01-01T00:10:02Z".to_string(),
         });
 
-        let summary = SessionRow {
-            session_id: "sess-1".to_string(),
-            last_seen: "2025-01-01T00:10:00Z".to_string(),
-            token_total: 25_000,
-            cost_usd: 0.8,
-            agent_ids: vec!["a1".to_string()],
-        };
+        let mut summary = make_test_session_row("sess-1", "2025-01-01T00:10:00Z");
+        summary.token_total = 25_000;
+        summary.cost_usd = 0.8;
+        summary.agent_ids = vec!["a1".to_string()];
         let agents = session_agent_rows(&state, &summary);
         let risk = session_risk_for_export(
             &summary,
@@ -2287,5 +2328,111 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].hour_key, "2025-01-01T14");
         assert_eq!(rows[0].token_total, 100);
+    }
+
+    // ── session display name tests ──
+
+    #[test]
+    fn test_generate_session_display_name_from_user_message() {
+        let name = generate_session_display_name("로그인 버그 수정해줘", "my-project", "abcd1234");
+        assert_eq!(name, "로그인 버그 수정해줘");
+    }
+
+    #[test]
+    fn test_generate_session_display_name_truncates_long_message() {
+        let long = "이것은 매우 긴 사용자 요청 메시지입니다 서른두 글자를 초과합니다 확인";
+        let name = generate_session_display_name(long, "proj", "abcd1234");
+        let char_count = name.chars().count();
+        assert!(char_count <= 35); // 32 chars + "..."
+        assert!(name.ends_with("..."));
+    }
+
+    #[test]
+    fn test_generate_session_display_name_multiline_to_single() {
+        let multi = "첫 줄 요청\n두 번째 줄\n세 번째 줄";
+        let name = generate_session_display_name(multi, "proj", "abcd1234");
+        assert!(!name.contains('\n'));
+        assert!(name.starts_with("첫 줄 요청"));
+    }
+
+    #[test]
+    fn test_generate_session_display_name_falls_back_to_project() {
+        let name = generate_session_display_name("", "claude-code-monitor", "abcd1234");
+        assert_eq!(name, "claude-code-monitor");
+    }
+
+    #[test]
+    fn test_generate_session_display_name_falls_back_to_short_id() {
+        let name = generate_session_display_name("", "", "abcd1234");
+        assert_eq!(name, "Session abcd1234");
+    }
+
+    #[test]
+    fn test_generate_session_display_name_trims_whitespace() {
+        let name = generate_session_display_name("  hello world  ", "proj", "abcd1234");
+        assert_eq!(name, "hello world");
+    }
+
+    #[test]
+    fn test_session_row_short_session_id_is_first_8_chars() {
+        let app = make_test_app();
+        let mut evt = make_test_event("ok", "tool_call", "a1", json!({}));
+        evt.session_id = "abcdefgh-1234-5678".to_string();
+        append_event(&app, evt);
+        let state = app.state.lock().unwrap();
+        let session = state.by_session.get("abcdefgh-1234-5678").unwrap();
+        assert_eq!(session.short_session_id, "abcdefgh");
+    }
+
+    #[test]
+    fn test_session_row_project_name_extracted_from_cwd() {
+        let app = make_test_app();
+        let mut evt = make_test_event("ok", "tool_call", "a1", json!({}));
+        evt.session_id = "sess-proj".to_string();
+        evt.cwd = "/home/user/my-cool-project".to_string();
+        append_event(&app, evt);
+        let state = app.state.lock().unwrap();
+        let session = state.by_session.get("sess-proj").unwrap();
+        assert_eq!(session.project_name, "my-cool-project");
+    }
+
+    #[test]
+    fn test_session_row_display_name_set_on_user_message() {
+        let app = make_test_app();
+        let mut evt = make_test_event("ok", "user_message", "a1", json!({}));
+        evt.session_id = "sess-dn".to_string();
+        evt.message = "로그인 버그 수정".to_string();
+        append_event(&app, evt);
+        let state = app.state.lock().unwrap();
+        let session = state.by_session.get("sess-dn").unwrap();
+        assert_eq!(session.display_name, "로그인 버그 수정");
+    }
+
+    #[test]
+    fn test_session_row_display_name_locked_after_user_message() {
+        let app = make_test_app();
+        let mut evt1 = make_test_event("ok", "user_message", "a1", json!({}));
+        evt1.session_id = "sess-lock".to_string();
+        evt1.message = "첫 요청".to_string();
+        append_event(&app, evt1);
+        let mut evt2 = make_test_event("ok", "user_message", "a1", json!({}));
+        evt2.session_id = "sess-lock".to_string();
+        evt2.message = "두 번째 요청".to_string();
+        append_event(&app, evt2);
+        let state = app.state.lock().unwrap();
+        let session = state.by_session.get("sess-lock").unwrap();
+        assert_eq!(session.display_name, "첫 요청");
+    }
+
+    #[test]
+    fn test_session_row_display_name_falls_back_to_project_name() {
+        let app = make_test_app();
+        let mut evt = make_test_event("ok", "tool_call", "a1", json!({}));
+        evt.session_id = "sess-fb".to_string();
+        evt.cwd = "/home/user/billing-api".to_string();
+        append_event(&app, evt);
+        let state = app.state.lock().unwrap();
+        let session = state.by_session.get("sess-fb").unwrap();
+        assert_eq!(session.display_name, "billing-api");
     }
 }
