@@ -114,6 +114,74 @@ describe('renderNeedsAttention', () => {
     assert.ok(!root.innerHTML.includes('>sess-uuid-1234<'));
   });
 
+  it('shows shortSessionId when duplicate displayNames exist', () => {
+    renderNeedsAttention([
+      {
+        sessionId: 'sess-uuid-1',
+        displayName: '버그 수정',
+        shortSessionId: 'abcd1234',
+        sessionState: 'failed',
+        needsAttention: true,
+        needsAttentionRank: 400,
+        needsAttentionReasons: ['failed'],
+        lastSeen: '2025-01-01T00:00:00Z',
+        tokenTotal: 100,
+        costUsd: 0.01,
+        agentIds: []
+      },
+      {
+        sessionId: 'sess-uuid-2',
+        displayName: '버그 수정',
+        shortSessionId: 'efgh5678',
+        sessionState: 'stuck',
+        needsAttention: true,
+        needsAttentionRank: 300,
+        needsAttentionReasons: ['stuck'],
+        lastSeen: '2025-01-01T00:00:00Z',
+        tokenTotal: 200,
+        costUsd: 0.02,
+        agentIds: []
+      }
+    ], root, () => {});
+
+    assert.ok(root.innerHTML.includes('abcd1234'));
+    assert.ok(root.innerHTML.includes('efgh5678'));
+  });
+
+  it('does not show shortSessionId when displayNames are unique', () => {
+    renderNeedsAttention([
+      {
+        sessionId: 'sess-uuid-1',
+        displayName: '로그인 에러',
+        shortSessionId: 'abcd1234',
+        sessionState: 'failed',
+        needsAttention: true,
+        needsAttentionRank: 400,
+        needsAttentionReasons: ['failed'],
+        lastSeen: '2025-01-01T00:00:00Z',
+        tokenTotal: 100,
+        costUsd: 0.01,
+        agentIds: []
+      },
+      {
+        sessionId: 'sess-uuid-2',
+        displayName: '빌드 실패',
+        shortSessionId: 'efgh5678',
+        sessionState: 'stuck',
+        needsAttention: true,
+        needsAttentionRank: 300,
+        needsAttentionReasons: ['stuck'],
+        lastSeen: '2025-01-01T00:00:00Z',
+        tokenTotal: 200,
+        costUsd: 0.02,
+        agentIds: []
+      }
+    ], root, () => {});
+
+    assert.ok(!root.innerHTML.includes('abcd1234'));
+    assert.ok(!root.innerHTML.includes('efgh5678'));
+  });
+
   it('wires row click back to the existing session detail handler', () => {
     let selected = '';
     renderNeedsAttention([{ sessionId: 'sess-2', sessionState: 'failed' }], root, (sessionId) => {

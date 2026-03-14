@@ -1,4 +1,4 @@
-import { escapeHtml, relativeTime, statusPill } from './utils.js';
+import { escapeHtml, relativeTime, statusPill, countDuplicateLabels } from './utils.js';
 
 const REASON_ORDER = ['failed', 'stuck', 'warning', 'cost_spike'];
 
@@ -90,13 +90,20 @@ export function renderNeedsAttention(sessions, root, onSelect) {
     return;
   }
 
+  const nameCounts = countDuplicateLabels(rows.map((s) => s.displayName || s.sessionId));
+
   root.innerHTML = rows
     .map(
-      (session) => `<button type="button" class="attention-item" data-session-id="${escapeHtml(session.sessionId)}">
+      (session) => {
+        const label = session.displayName || session.sessionId;
+        const disambig = (nameCounts.get(label) || 0) > 1 && session.shortSessionId
+          ? ` <span class="attention-item-short-id">${escapeHtml(session.shortSessionId)}</span>`
+          : '';
+        return `<button type="button" class="attention-item" data-session-id="${escapeHtml(session.sessionId)}">
         <div class="attention-item-main">
           <div class="attention-item-title">
             <div class="attention-item-head">
-              <strong class="attention-item-id">${escapeHtml(session.displayName || session.sessionId)}</strong>
+              <strong class="attention-item-id">${escapeHtml(label)}</strong>${disambig}
               ${statusPill(session.sessionState)}
             </div>
             <div class="attention-reasons">
@@ -111,7 +118,8 @@ export function renderNeedsAttention(sessions, root, onSelect) {
           <span>cost: $${Number(session.costUsd || 0).toFixed(4)}</span>
           <span>agents: ${Array.isArray(session.agentIds) ? session.agentIds.length : 0}</span>
         </div>
-      </button>`
+      </button>`;
+      }
     )
     .join('');
 
