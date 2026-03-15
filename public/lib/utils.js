@@ -45,6 +45,14 @@ export function relativeTime(isoString, now = Date.now()) {
   return `${Math.floor(elapsed / 86400)}일 전`;
 }
 
+export function countDuplicateLabels(labels) {
+  const counts = new Map();
+  for (const label of labels) {
+    counts.set(label, (counts.get(label) || 0) + 1);
+  }
+  return counts;
+}
+
 export function countActiveAgents(agents, now = Date.now()) {
   return agents.filter((a) => now - new Date(a.lastSeen).getTime() < 30_000).length;
 }

@@ -154,6 +154,63 @@ describe('selectSessionsForList', () => {
       ['alpha-risk']
     );
   });
+
+  it('searches by projectName, shortSessionId, and full sessionId', () => {
+    const sessions = [
+      {
+        sessionId: 'fdab33ec-c234-4fe5-a84d-f35eee9af6f4',
+        displayName: '로그인 버그 수정',
+        projectName: 'billing-api',
+        shortSessionId: 'fdab33ec',
+        lastSeen: '2025-01-01T00:00:10Z',
+        costUsd: 0.1,
+        tokenTotal: 500,
+        needsAttentionRank: 0,
+        needsAttention: false,
+        needsAttentionReasons: [],
+        sessionState: 'active',
+        agentIds: []
+      },
+      {
+        sessionId: 'aaaa1111-bbbb-cccc-dddd-eeeeffffaaaa',
+        displayName: '다크모드 추가',
+        projectName: 'frontend-app',
+        shortSessionId: 'aaaa1111',
+        lastSeen: '2025-01-01T00:00:20Z',
+        costUsd: 0.2,
+        tokenTotal: 1000,
+        needsAttentionRank: 0,
+        needsAttention: false,
+        needsAttentionReasons: [],
+        sessionState: 'active',
+        agentIds: []
+      }
+    ];
+
+    // search by projectName
+    assert.deepEqual(
+      selectSessionsForList(sessions, { query: 'billing-api' }).map((s) => s.sessionId),
+      ['fdab33ec-c234-4fe5-a84d-f35eee9af6f4']
+    );
+
+    // search by shortSessionId
+    assert.deepEqual(
+      selectSessionsForList(sessions, { query: 'aaaa1111' }).map((s) => s.sessionId),
+      ['aaaa1111-bbbb-cccc-dddd-eeeeffffaaaa']
+    );
+
+    // search by full sessionId
+    assert.deepEqual(
+      selectSessionsForList(sessions, { query: 'fdab33ec-c234' }).map((s) => s.sessionId),
+      ['fdab33ec-c234-4fe5-a84d-f35eee9af6f4']
+    );
+
+    // search by displayName
+    assert.deepEqual(
+      selectSessionsForList(sessions, { query: '로그인' }).map((s) => s.sessionId),
+      ['fdab33ec-c234-4fe5-a84d-f35eee9af6f4']
+    );
+  });
 });
 
 describe('renderSessionsList', () => {
@@ -187,6 +244,26 @@ describe('renderSessionsList', () => {
     ];
     renderSessionsList(sessions, root, () => {});
     assert.ok(root.innerHTML.includes('s1'));
+  });
+
+  it('shows shortSessionId in secondary label when displayNames collide', () => {
+    const sessions = [
+      { ...baseSessions[0], sessionId: 's1-uuid', displayName: '버그 수정', projectName: 'my-project', shortSessionId: 'abcd1234' },
+      { ...baseSessions[1], sessionId: 's2-uuid', displayName: '버그 수정', projectName: 'my-project', shortSessionId: 'efgh5678' }
+    ];
+    renderSessionsList(sessions, root, () => {});
+    assert.ok(root.innerHTML.includes('abcd1234'));
+    assert.ok(root.innerHTML.includes('efgh5678'));
+  });
+
+  it('does not show shortSessionId when displayNames are unique', () => {
+    const sessions = [
+      { ...baseSessions[0], sessionId: 's1-uuid', displayName: '로그인 수정', projectName: 'my-project', shortSessionId: 'abcd1234' },
+      { ...baseSessions[1], sessionId: 's2-uuid', displayName: '다크모드 추가', projectName: 'my-project', shortSessionId: 'efgh5678' }
+    ];
+    renderSessionsList(sessions, root, () => {});
+    assert.ok(!root.innerHTML.includes('abcd1234'));
+    assert.ok(!root.innerHTML.includes('efgh5678'));
   });
 
   it('renders secondary label with project name, state, and last activity', () => {

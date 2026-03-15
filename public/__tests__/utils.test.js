@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { escapeHtml, statusPill, normalizeText, getActivityStatus, activityDotHtml, countActiveAgents, relativeTime } from '../lib/utils.js';
+import { escapeHtml, statusPill, normalizeText, getActivityStatus, activityDotHtml, countActiveAgents, relativeTime, countDuplicateLabels } from '../lib/utils.js';
 
 describe('escapeHtml', () => {
   it('escapes & < > " \'', () => {
@@ -196,5 +196,24 @@ describe('relativeTime', () => {
 
   it('returns "-" for invalid date string', () => {
     assert.equal(relativeTime('not-a-date'), '-');
+  });
+});
+
+describe('countDuplicateLabels', () => {
+  it('counts occurrences of each label', () => {
+    const items = ['버그 수정', '다크모드', '버그 수정'];
+    const counts = countDuplicateLabels(items);
+    assert.equal(counts.get('버그 수정'), 2);
+    assert.equal(counts.get('다크모드'), 1);
+  });
+
+  it('returns empty map for empty array', () => {
+    const counts = countDuplicateLabels([]);
+    assert.equal(counts.size, 0);
+  });
+
+  it('handles single item', () => {
+    const counts = countDuplicateLabels(['only-one']);
+    assert.equal(counts.get('only-one'), 1);
   });
 });

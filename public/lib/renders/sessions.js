@@ -1,4 +1,4 @@
-import { escapeHtml, relativeTime, statusPill } from '../utils.js';
+import { escapeHtml, relativeTime, statusPill, countDuplicateLabels } from '../utils.js';
 import { displayNameFor } from '../agent-display.js';
 import { sanitizeAlertRules } from '../alert-rules.js';
 
@@ -6,8 +6,11 @@ function sessionDisplayLabel(session = {}) {
   return session.displayName || session.shortSessionId || session.sessionId || '';
 }
 
-function sessionSecondaryHtml(session = {}) {
+function sessionSecondaryHtml(session = {}, options = {}) {
   const parts = [session.projectName, session.sessionState || 'idle', relativeTime(session.lastSeen)].filter(Boolean);
+  if (options.showShortId && session.shortSessionId) {
+    parts.push(session.shortSessionId);
+  }
   return `<div class="session-item-secondary">${parts.map(escapeHtml).join(' · ')}</div>`;
 }
 
@@ -38,6 +41,8 @@ function sessionSearchText(session = {}) {
   return [
     session.sessionId,
     session.displayName,
+    session.projectName,
+    session.shortSessionId,
     session.sessionState,
     ...(Array.isArray(session.agentIds) ? session.agentIds : []),
     ...(Array.isArray(session.needsAttentionReasons) ? session.needsAttentionReasons : [])
@@ -117,19 +122,25 @@ export function renderSessionsList(sessions, root, onSelect, options = {}) {
     return;
   }
 
+  const nameCounts = countDuplicateLabels(rows.map(sessionDisplayLabel));
+
   root.innerHTML = rows
     .map(
-      (s) => `<div class="session-item${s.sessionId === selectedSessionId ? ' session-item--selected' : ''}" data-session-id="${escapeHtml(s.sessionId)}">
+      (s) => {
+        const label = sessionDisplayLabel(s);
+        const showShortId = (nameCounts.get(label) || 0) > 1;
+        return `<div class="session-item${s.sessionId === selectedSessionId ? ' session-item--selected' : ''}" data-session-id="${escapeHtml(s.sessionId)}">
         <div class="session-item-main">
-          <div class="session-item-name">${escapeHtml(sessionDisplayLabel(s))}</div>
+          <div class="session-item-name">${escapeHtml(label)}</div>
           ${statusPill(s.sessionState || 'idle')}
         </div>
-        ${sessionSecondaryHtml(s)}
+        ${sessionSecondaryHtml(s, { showShortId })}
         <div class="session-item-meta">
           ${sessionMetaHtml(s)}
         </div>
         ${sessionReasonBadges(s)}
-      </div>`
+      </div>`;
+      }
     )
     .join('');
 
