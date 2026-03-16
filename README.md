@@ -14,8 +14,8 @@ Claude Code 세션의 실시간 모니터링 대시보드. Rust 백엔드 + Elec
 - `~/.claude/history.jsonl`, `~/.claude/projects/` 자동 수집 (내장 컬렉터)
 - 세션 중심 대시보드
   - 상단 요약 카드
-  - `Needs Attention`
   - `Sessions Workspace`
+  - `Needs Attention`
   - `Alerts`
   - `Workflow`
   - `에이전트` 참고 표
