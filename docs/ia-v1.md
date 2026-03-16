@@ -105,8 +105,8 @@ v1 메인 화면의 권장 순서는 아래와 같다.
 1. Header
 2. Time range + connection state + last refresh
 3. Summary cards
-4. Needs Attention
-5. Sessions workspace
+4. Sessions workspace
+5. Needs Attention
 6. Alerts
 7. Workflow
 8. Agents
@@ -121,9 +121,9 @@ v1 메인 화면의 권장 순서는 아래와 같다.
 1. Header
 2. Connection / refresh / time range
 3. Summary cards
-4. Needs Attention
-5. Sessions list
-6. Session detail
+4. Sessions list
+5. Session detail
+6. Needs Attention
 7. Alerts
 8. Workflow
 9. Agents
@@ -171,41 +171,7 @@ v1 필수 카드:
 - `Error` 대신 또는 함께 `Needs Attention` 카드가 필요하다.
 - 핵심 단위를 `agent`보다 `session` 중심으로 바꾸는 것이 바람직하다.
 
-### 7.3 Needs Attention
-
-목적:
-지금 개입해야 할 대상을 화면 최상단에서 알려준다.
-
-표시 대상:
-
-- `error` 포함 세션
-- 최근 일정 시간 동안 응답이 없는 `stuck` 후보 세션
-- `warning` 누적 세션
-- 비용이 짧은 시간에 급증한 세션
-
-행 정보:
-
-- 세션 ID 또는 표시 이름
-- 현재 상태
-- 마지막 이벤트
-- 마지막 활동 시각
-- 토큰 / 비용
-- 참여 agent 수
-
-행 액션:
-
-- 클릭 시 세션 상세 열기
-- 경고 사유 또는 대표 이벤트 노출
-
-정렬 규칙:
-
-1. failed
-2. stuck
-3. warning
-4. cost spike
-5. recently active
-
-### 7.4 Sessions Workspace
+### 7.3 Sessions Workspace
 
 목적:
 운영자가 가장 오래 머무는 핵심 작업 공간.
@@ -242,6 +208,40 @@ v1 필수 카드:
 
 - v1의 대표 탐색 흐름은 `세션 선택 -> 이벤트 확인 -> 원인 파악`이다.
 - 따라서 세션 상세는 별도 숨겨진 보조 화면이 아니라 메인 작업면이어야 한다.
+
+### 7.4 Needs Attention
+
+목적:
+지금 개입해야 할 대상을 세션 작업면 바로 아래에서 빠르게 알려준다.
+
+표시 대상:
+
+- `error` 포함 세션
+- 최근 일정 시간 동안 응답이 없는 `stuck` 후보 세션
+- `warning` 누적 세션
+- 비용이 짧은 시간에 급증한 세션
+
+행 정보:
+
+- 세션 ID 또는 표시 이름
+- 현재 상태
+- 마지막 이벤트
+- 마지막 활동 시각
+- 토큰 / 비용
+- 참여 agent 수
+
+행 액션:
+
+- 클릭 시 세션 상세 열기
+- 경고 사유 또는 대표 이벤트 노출
+
+정렬 규칙:
+
+1. failed
+2. stuck
+3. warning
+4. cost spike
+5. recently active
 
 ### 7.5 Alerts
 
@@ -343,8 +343,9 @@ v1 판단:
 
 1. 사용자가 화면을 연다
 2. 연결 상태와 요약 카드를 본다
-3. `Needs Attention`에서 문제 세션 존재 여부를 확인한다
-4. 문제 세션이 있으면 세션 상세로 진입한다
+3. `Sessions Workspace`에서 최근 세션과 선택 가능한 작업면을 확인한다
+4. `Needs Attention`에서 우선 개입 대상을 빠르게 좁힌다
+5. 필요한 세션 상세로 진입한다
 
 ### 8.2 문제 진단 흐름
 
