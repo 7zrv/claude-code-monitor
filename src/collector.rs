@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
-use crate::state::append_event;
+use crate::state::{append_event, hydrate_event};
 use crate::types::{App, Event};
 use crate::utils::now_iso;
 
@@ -59,6 +59,51 @@ pub fn read_delta_lines(
     lines.into_iter().filter(|s| !s.is_empty()).collect()
 }
 
+fn truncate_message(text: &str) -> String {
+    text.chars().take(120).collect()
+}
+
+fn format_unix_ts(ts: i64) -> Option<String> {
+    let seconds = if ts.abs() > 10_000_000_000 {
+        ts / 1000
+    } else {
+        ts
+    };
+    OffsetDateTime::from_unix_timestamp(seconds)
+        .ok()
+        .and_then(|d| d.format(&Rfc3339).ok())
+}
+
+fn normalize_rfc3339(ts: &str) -> Option<String> {
+    OffsetDateTime::parse(ts, &Rfc3339)
+        .ok()
+        .and_then(|dt| dt.format(&Rfc3339).ok())
+}
+
+fn parse_event_timestamp(v: &Value) -> String {
+    if let Some(ts) = v
+        .get("timestamp")
+        .and_then(|x| x.as_i64())
+        .or_else(|| v.get("ts").and_then(|x| x.as_i64()))
+    {
+        if let Some(dt) = format_unix_ts(ts) {
+            return dt;
+        }
+    }
+
+    if let Some(ts) = v
+        .get("timestamp")
+        .and_then(|x| x.as_str())
+        .or_else(|| v.get("ts").and_then(|x| x.as_str()))
+    {
+        if let Some(dt) = normalize_rfc3339(ts) {
+            return dt;
+        }
+    }
+
+    now_iso()
+}
+
 pub fn parse_history_event(line: &str, app: &App) -> Option<Event> {
     let v: Value = serde_json::from_str(line).ok()?;
     let text = v
@@ -66,20 +111,7 @@ pub fn parse_history_event(line: &str, app: &App) -> Option<Event> {
         .or_else(|| v.get("text"))
         .and_then(|x| x.as_str())?
         .to_string();
-
-    let dt = if let Some(ts_str) = v
-        .get("timestamp")
-        .and_then(|x| x.as_str())
-        .filter(|s| OffsetDateTime::parse(s, &Rfc3339).is_ok())
-    {
-        ts_str.to_string()
-    } else {
-        let ts = v.get("ts").and_then(|x| x.as_i64()).unwrap_or(0);
-        OffsetDateTime::from_unix_timestamp(ts)
-            .ok()
-            .and_then(|d| d.format(&Rfc3339).ok())
-            .unwrap_or_else(now_iso)
-    };
+    let dt = parse_event_timestamp(&v);
 
     let session_id = v
         .get("sessionId")
@@ -93,14 +125,14 @@ pub fn parse_history_event(line: &str, app: &App) -> Option<Event> {
         event: "user_request".to_string(),
         status: "ok".to_string(),
         latency_ms: None,
-        message: text.chars().take(120).collect(),
+        message: truncate_message(&text),
         metadata: json!({
             "source": "claude_history",
             "sessionId": session_id,
             "textLength": text.len()
         }),
-        timestamp: dt,
-        received_at: now_iso(),
+        timestamp: dt.clone(),
+        received_at: dt,
         model: String::new(),
         is_sidechain: false,
         session_id: String::new(),
@@ -132,11 +164,7 @@ pub fn parse_session_line(line: &str, app: &App) -> Vec<Event> {
             let prefix: String = session_id.chars().take(8).collect();
             format!("lead-{}", prefix)
         });
-    let timestamp = v
-        .get("timestamp")
-        .and_then(|t| t.as_str())
-        .map(|s| s.to_string())
-        .unwrap_or_else(now_iso);
+    let timestamp = parse_event_timestamp(&v);
     let cwd = v
         .get("cwd")
         .and_then(|c| c.as_str())
@@ -177,14 +205,14 @@ pub fn parse_session_line(line: &str, app: &App) -> Vec<Event> {
                 event: "user_message".to_string(),
                 status: "ok".to_string(),
                 latency_ms: None,
-                message: content.chars().take(120).collect(),
+                message: truncate_message(&content),
                 metadata: json!({
                     "source": "claude_session",
                     "sessionId": session_id,
                     "isSidechain": is_sidechain,
                 }),
-                timestamp,
-                received_at: now_iso(),
+                timestamp: timestamp.clone(),
+                received_at: timestamp.clone(),
                 model: String::new(),
                 is_sidechain,
                 session_id: session_id.clone(),
@@ -216,7 +244,7 @@ pub fn parse_session_line(line: &str, app: &App) -> Vec<Event> {
                                     event: "assistant_message".to_string(),
                                     status: "ok".to_string(),
                                     latency_ms: None,
-                                    message: text.chars().take(120).collect(),
+                                    message: truncate_message(text),
                                     metadata: json!({
                                         "source": "claude_session",
                                         "sessionId": session_id,
@@ -224,7 +252,7 @@ pub fn parse_session_line(line: &str, app: &App) -> Vec<Event> {
                                         "isSidechain": is_sidechain,
                                     }),
                                     timestamp: timestamp.clone(),
-                                    received_at: now_iso(),
+                                    received_at: timestamp.clone(),
                                     model: model.clone(),
                                     is_sidechain,
                                     session_id: session_id.clone(),
@@ -253,7 +281,7 @@ pub fn parse_session_line(line: &str, app: &App) -> Vec<Event> {
                                     "toolInput": input,
                                 }),
                                 timestamp: timestamp.clone(),
-                                received_at: now_iso(),
+                                received_at: timestamp.clone(),
                                 model: model.clone(),
                                 is_sidechain,
                                 session_id: session_id.clone(),
@@ -301,7 +329,7 @@ pub fn parse_session_line(line: &str, app: &App) -> Vec<Event> {
                             }
                         }),
                         timestamp: timestamp.clone(),
-                        received_at: now_iso(),
+                        received_at: timestamp.clone(),
                         model: model.clone(),
                         is_sidechain,
                         session_id: session_id.clone(),
@@ -332,8 +360,8 @@ pub fn parse_session_line(line: &str, app: &App) -> Vec<Event> {
                     "activityType": msg_type,
                     "isSidechain": is_sidechain,
                 }),
-                timestamp,
-                received_at: now_iso(),
+                timestamp: timestamp.clone(),
+                received_at: timestamp,
                 model: String::new(),
                 is_sidechain,
                 session_id: session_id.clone(),
@@ -372,7 +400,33 @@ pub fn walk_jsonl_files(dir: &Path) -> Vec<PathBuf> {
             walk_jsonl_recursive(&path, &mut result);
         }
     }
+    result.sort();
     result
+}
+
+pub fn hydrate_session_files(
+    projects_dir: &Path,
+    app: &App,
+    cursors: &mut HashMap<PathBuf, (u64, String)>,
+    include_aggregates: bool,
+) {
+    let files = walk_jsonl_files(projects_dir);
+    for file in files {
+        let mut cursor = (0_u64, String::new());
+        let lines = read_delta_lines(&file, &mut cursor, 512 * 1024);
+        for line in lines {
+            let events = parse_session_line(&line, app);
+            for evt in events {
+                if include_aggregates {
+                    append_event(app, evt);
+                } else {
+                    hydrate_event(app, evt);
+                }
+            }
+        }
+        cursor.1.clear();
+        cursors.insert(file, cursor);
+    }
 }
 
 pub fn poll_session_files(
@@ -511,6 +565,18 @@ pub fn spawn_claude_collector(app: App, claude_home: PathBuf, poll_ms: u64, back
         if let Ok(meta) = metadata(&history) {
             history_cursor.0 = meta.len();
         }
+
+        let hydrate_with_aggregates = app
+            .state
+            .lock()
+            .map(|state| state.hourly_buckets.is_empty())
+            .unwrap_or(true);
+        hydrate_session_files(
+            &projects_dir,
+            &app,
+            &mut session_cursors,
+            hydrate_with_aggregates,
+        );
 
         loop {
             for line in read_delta_lines(&history, &mut history_cursor, 512 * 1024) {
@@ -753,6 +819,7 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].event, "user_message");
         assert_eq!(events[0].message, "hi");
+        assert_eq!(events[0].received_at, "2025-01-01T00:00:00Z");
     }
 
     #[test]
@@ -971,6 +1038,39 @@ mod tests {
         let state = app.state.lock().unwrap();
         assert_eq!(state.recent.len(), 1);
         assert_eq!(state.recent[0].event, "user_message");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_hydrate_session_files_sets_cursor_and_skips_aggregate_buckets() {
+        let dir = unique_tmp_dir("hydrate_session_files");
+        let sub = dir.join("proj1");
+        std::fs::create_dir_all(&sub).unwrap();
+        let session_file = sub.join("session.jsonl");
+        {
+            let mut f = File::create(&session_file).unwrap();
+            writeln!(
+                f,
+                r#"{{"type":"assistant","message":{{"model":"claude-3","content":[{{"type":"text","text":"hello"}}],"usage":{{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0}}}},"sessionId":"s1","timestamp":"2025-01-01T00:00:00Z"}}"#
+            )
+            .unwrap();
+        }
+
+        let app = make_test_app();
+        let mut cursors: HashMap<PathBuf, (u64, String)> = HashMap::new();
+        hydrate_session_files(&dir, &app, &mut cursors, false);
+
+        let state = app.state.lock().unwrap();
+        assert!(state.hourly_buckets.is_empty());
+        assert_eq!(state.by_session["s1"].token_total, 150);
+        assert_eq!(state.by_agent["lead-s1"].token_total, 150);
+        drop(state);
+
+        let cursor = cursors.get(&session_file).unwrap();
+        let meta = metadata(&session_file).unwrap();
+        assert_eq!(cursor.0, meta.len());
+        assert!(cursor.1.is_empty());
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -1,4 +1,5 @@
 use serde_json::json;
+use std::cmp::Ordering as CmpOrdering;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use time::format_description::well_known::Rfc3339;
@@ -481,10 +482,67 @@ pub fn generate_session_display_name(
     format!("Session {}", short_session_id)
 }
 
-pub fn append_event(app: &App, evt: Event) {
+#[derive(Clone, Copy)]
+struct AppendEventOptions {
+    include_aggregates: bool,
+    broadcast: bool,
+}
+
+fn parse_event_time(value: &str) -> Option<OffsetDateTime> {
+    OffsetDateTime::parse(value, &Rfc3339).ok()
+}
+
+fn canonical_event_time(evt: &Event) -> String {
+    if parse_event_time(&evt.timestamp).is_some() {
+        evt.timestamp.clone()
+    } else if parse_event_time(&evt.received_at).is_some() {
+        evt.received_at.clone()
+    } else {
+        now_iso()
+    }
+}
+
+fn compare_time_strings(left: &str, right: &str) -> CmpOrdering {
+    match (parse_event_time(left), parse_event_time(right)) {
+        (Some(a), Some(b)) => a.cmp(&b),
+        (Some(_), None) => CmpOrdering::Greater,
+        (None, Some(_)) => CmpOrdering::Less,
+        (None, None) => left.cmp(right),
+    }
+}
+
+fn update_latest_time(current: &mut String, candidate: &str) -> bool {
+    if current.is_empty() || compare_time_strings(candidate, current) == CmpOrdering::Greater {
+        *current = candidate.to_string();
+        true
+    } else {
+        false
+    }
+}
+
+fn sort_recent_events(events: &mut [Event]) {
+    events.sort_by(|a, b| {
+        compare_time_strings(&b.received_at, &a.received_at).then_with(|| b.id.cmp(&a.id))
+    });
+}
+
+fn sort_session_events(events: &mut [Event]) {
+    events.sort_by(|a, b| {
+        compare_time_strings(&a.received_at, &b.received_at).then_with(|| a.id.cmp(&b.id))
+    });
+}
+
+fn hour_key_from_iso(value: &str) -> Option<&str> {
+    parse_event_time(value)?;
+    value.get(..13)
+}
+
+fn append_event_with_options(app: &App, evt: Event, options: AppendEventOptions) {
+    let event_time = canonical_event_time(&evt);
     {
         let mut state = app.state.lock().unwrap_or_else(|e| e.into_inner());
-        state.recent.insert(0, evt.clone());
+        state.recent.push(evt.clone());
+        sort_recent_events(&mut state.recent);
         if state.recent.len() > 200 {
             state.recent.truncate(200);
         }
@@ -494,7 +552,7 @@ pub fn append_event(app: &App, evt: Event) {
             .entry(evt.agent_id.clone())
             .or_insert(AgentRow {
                 agent_id: evt.agent_id.clone(),
-                last_seen: evt.received_at.clone(),
+                last_seen: event_time.clone(),
                 total: 0,
                 ok: 0,
                 warning: 0,
@@ -511,16 +569,18 @@ pub fn append_event(app: &App, evt: Event) {
                 display_name_from_user: false,
             });
 
-        row.last_seen = evt.received_at.clone();
         row.total += 1;
-        row.last_event = evt.event.clone();
-        row.latency_ms = evt.latency_ms;
-        if !evt.model.is_empty() {
-            row.model = evt.model.clone();
-        }
-        row.is_sidechain = evt.is_sidechain;
-        if !evt.session_id.is_empty() {
-            row.session_id = evt.session_id.clone();
+        let is_latest_agent_event = update_latest_time(&mut row.last_seen, &event_time);
+        if is_latest_agent_event {
+            row.last_event = evt.event.clone();
+            row.latency_ms = evt.latency_ms;
+            if !evt.model.is_empty() {
+                row.model = evt.model.clone();
+            }
+            row.is_sidechain = evt.is_sidechain;
+            if !evt.session_id.is_empty() {
+                row.session_id = evt.session_id.clone();
+            }
         }
         if (evt.event == "user_message" || evt.event == "user_request")
             && !evt.message.is_empty()
@@ -578,41 +638,47 @@ pub fn append_event(app: &App, evt: Event) {
             row.cost_usd += cost_delta;
         }
 
-        // row is no longer used — update state-level accumulators
-        if token_total > 0 {
-            state.token_total += token_total;
-        }
-        if cost_delta > 0.0 {
-            state.cost_total_usd += cost_delta;
-        }
-
-        if (token_total > 0 || cost_delta > 0.0) && evt.received_at.len() >= 13 {
-            let hour_key = &evt.received_at[..13];
-            // rev() scan is O(1) in normal operation (latest bucket matches);
-            // worst-case O(744) for backfilled events, acceptable for bounded vec.
-            if let Some(bucket) = state
-                .hourly_buckets
-                .iter_mut()
-                .rev()
-                .find(|b| b.hour_key == hour_key)
-            {
-                bucket.token_total += token_total;
-                bucket.cost_usd += cost_delta;
-            } else {
-                state.hourly_buckets.push(HourBucket {
-                    hour_key: hour_key.to_string(),
-                    token_total,
-                    cost_usd: cost_delta,
-                });
-                if state.hourly_buckets.len() > 744 {
-                    state.hourly_buckets.remove(0);
-                }
+        if options.include_aggregates {
+            if token_total > 0 {
+                state.token_total += token_total;
+            }
+            if cost_delta > 0.0 {
+                state.cost_total_usd += cost_delta;
             }
 
-            if let Some(db_arc) = &app.db {
-                if let Ok(db) = db_arc.lock() {
-                    if let Err(e) = db.upsert_bucket(hour_key, token_total, cost_delta) {
-                        eprintln!("[db] upsert_bucket error: {e}");
+            if token_total > 0 || cost_delta > 0.0 {
+                if let Some(hour_key) = hour_key_from_iso(&event_time) {
+                    // rev() scan is O(1) in normal operation (latest bucket matches);
+                    // worst-case O(744) for backfilled events, acceptable for bounded vec.
+                    if let Some(bucket) = state
+                        .hourly_buckets
+                        .iter_mut()
+                        .rev()
+                        .find(|b| b.hour_key == hour_key)
+                    {
+                        bucket.token_total += token_total;
+                        bucket.cost_usd += cost_delta;
+                    } else {
+                        state.hourly_buckets.push(HourBucket {
+                            hour_key: hour_key.to_string(),
+                            token_total,
+                            cost_usd: cost_delta,
+                        });
+                        state
+                            .hourly_buckets
+                            .sort_by(|a, b| compare_time_strings(&a.hour_key, &b.hour_key));
+                        if state.hourly_buckets.len() > 744 {
+                            let excess = state.hourly_buckets.len() - 744;
+                            state.hourly_buckets.drain(..excess);
+                        }
+                    }
+
+                    if let Some(db_arc) = &app.db {
+                        if let Ok(db) = db_arc.lock() {
+                            if let Err(e) = db.upsert_bucket(hour_key, token_total, cost_delta) {
+                                eprintln!("[db] upsert_bucket error: {e}");
+                            }
+                        }
                     }
                 }
             }
@@ -635,7 +701,7 @@ pub fn append_event(app: &App, evt: Event) {
                     let display_name = generate_session_display_name("", &project, &short_id);
                     SessionRow {
                         session_id: evt.session_id.clone(),
-                        last_seen: evt.received_at.clone(),
+                        last_seen: event_time.clone(),
                         token_total: 0,
                         cost_usd: 0.0,
                         agent_ids: vec![],
@@ -645,7 +711,7 @@ pub fn append_event(app: &App, evt: Event) {
                         display_name_locked: false,
                     }
                 });
-            session.last_seen = evt.received_at.clone();
+            update_latest_time(&mut session.last_seen, &event_time);
             if token_total > 0 {
                 session.token_total += token_total;
             }
@@ -681,6 +747,7 @@ pub fn append_event(app: &App, evt: Event) {
                 .entry(evt.session_id.clone())
                 .or_default();
             session_events.push(evt.clone());
+            sort_session_events(session_events);
             if session_events.len() > 500 {
                 let excess = session_events.len() - 500;
                 session_events.drain(..excess);
@@ -713,11 +780,11 @@ pub fn append_event(app: &App, evt: Event) {
             ok: 0,
             warning: 0,
             error: 0,
-            last_seen: evt.received_at.clone(),
+            last_seen: event_time.clone(),
         });
 
         source_row.total += 1;
-        source_row.last_seen = evt.received_at.clone();
+        update_latest_time(&mut source_row.last_seen, &event_time);
         match evt.status.as_str() {
             "error" => source_row.error += 1,
             "warning" => source_row.warning += 1,
@@ -725,30 +792,54 @@ pub fn append_event(app: &App, evt: Event) {
         }
 
         if evt.status == "warning" || evt.status == "error" {
-            state.alerts.insert(
-                0,
-                AlertRow {
-                    id: format!("a{}", app.event_seq.fetch_add(1, Ordering::Relaxed)),
-                    severity: evt.status.clone(),
-                    agent_id: evt.agent_id.clone(),
-                    session_id: evt.session_id.clone(),
-                    event: evt.event.clone(),
-                    message: if evt.message.is_empty() {
-                        "No message".to_string()
-                    } else {
-                        evt.message.clone()
-                    },
-                    created_at: evt.received_at.clone(),
+            state.alerts.push(AlertRow {
+                id: format!("a{}", app.event_seq.fetch_add(1, Ordering::Relaxed)),
+                severity: evt.status.clone(),
+                agent_id: evt.agent_id.clone(),
+                session_id: evt.session_id.clone(),
+                event: evt.event.clone(),
+                message: if evt.message.is_empty() {
+                    "No message".to_string()
+                } else {
+                    evt.message.clone()
                 },
-            );
+                created_at: event_time.clone(),
+            });
+            state.alerts.sort_by(|a, b| {
+                compare_time_strings(&b.created_at, &a.created_at).then_with(|| b.id.cmp(&a.id))
+            });
             if state.alerts.len() > 120 {
                 state.alerts.truncate(120);
             }
         }
     }
 
-    let payload = json!({ "type": "event", "payload": evt }).to_string();
-    broadcast_sse(app, format!("data: {}\n\n", payload));
+    if options.broadcast {
+        let payload = json!({ "type": "event", "payload": evt }).to_string();
+        broadcast_sse(app, format!("data: {}\n\n", payload));
+    }
+}
+
+pub fn append_event(app: &App, evt: Event) {
+    append_event_with_options(
+        app,
+        evt,
+        AppendEventOptions {
+            include_aggregates: true,
+            broadcast: true,
+        },
+    );
+}
+
+pub fn hydrate_event(app: &App, evt: Event) {
+    append_event_with_options(
+        app,
+        evt,
+        AppendEventOptions {
+            include_aggregates: false,
+            broadcast: false,
+        },
+    );
 }
 
 pub fn broadcast_sse(app: &App, message: String) {
@@ -2052,6 +2143,29 @@ mod tests {
         }
     }
 
+    fn make_event_with_times(
+        event: &str,
+        timestamp: &str,
+        received_at: &str,
+        metadata: serde_json::Value,
+    ) -> Event {
+        Event {
+            id: "e0".to_string(),
+            agent_id: "a1".to_string(),
+            event: event.to_string(),
+            status: "ok".to_string(),
+            latency_ms: None,
+            message: "test".to_string(),
+            metadata,
+            timestamp: timestamp.to_string(),
+            received_at: received_at.to_string(),
+            model: String::new(),
+            is_sidechain: false,
+            session_id: String::new(),
+            cwd: String::new(),
+        }
+    }
+
     #[test]
     fn test_hourly_bucket_created_on_token_event() {
         let app = make_test_app();
@@ -2123,6 +2237,18 @@ mod tests {
         assert_eq!(state.hourly_buckets.len(), 1);
         assert_eq!(state.hourly_buckets[0].token_total, 0);
         assert!((state.hourly_buckets[0].cost_usd - 0.05).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_hourly_bucket_prefers_timestamp_over_received_at() {
+        let app = make_test_app();
+        let meta = json!({ "tokenUsage": { "totalTokens": 100 } });
+        let evt =
+            make_event_with_times("msg", "2025-01-01T14:00:00Z", "2026-03-16T01:00:00Z", meta);
+        append_event(&app, evt);
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.hourly_buckets.len(), 1);
+        assert_eq!(state.hourly_buckets[0].hour_key, "2025-01-01T14");
     }
 
     #[test]
@@ -2328,6 +2454,52 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].hour_key, "2025-01-01T14");
         assert_eq!(rows[0].token_total, 100);
+    }
+
+    #[test]
+    fn test_hydrate_event_skips_aggregate_buckets_but_keeps_agent_and_session_tokens() {
+        let app = make_test_app();
+        let mut evt = make_test_event(
+            "ok",
+            "token_usage",
+            "a1",
+            json!({ "tokenUsage": { "totalTokens": 100 } }),
+        );
+        evt.session_id = "sess-hydrate".to_string();
+        evt.timestamp = "2025-01-01T14:00:00Z".to_string();
+        evt.received_at = "2026-03-16T01:00:00Z".to_string();
+
+        hydrate_event(&app, evt);
+
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.token_total, 0);
+        assert!(state.hourly_buckets.is_empty());
+        assert_eq!(state.by_agent["a1"].token_total, 100);
+        assert_eq!(state.by_session["sess-hydrate"].token_total, 100);
+    }
+
+    #[test]
+    fn test_append_event_keeps_latest_last_seen_when_older_event_arrives_late() {
+        let app = make_test_app();
+        let mut newer =
+            make_test_event_with_session("ok", "assistant_message", "a1", "sess-late", json!({}));
+        newer.timestamp = "2025-01-01T14:05:00Z".to_string();
+        newer.received_at = "2025-01-01T14:05:00Z".to_string();
+
+        let mut older =
+            make_test_event_with_session("ok", "user_message", "a1", "sess-late", json!({}));
+        older.timestamp = "2025-01-01T14:00:00Z".to_string();
+        older.received_at = "2025-01-01T14:00:00Z".to_string();
+
+        append_event(&app, newer);
+        append_event(&app, older);
+
+        let state = app.state.lock().unwrap();
+        assert_eq!(state.by_agent["a1"].last_seen, "2025-01-01T14:05:00Z");
+        assert_eq!(
+            state.by_session["sess-late"].last_seen,
+            "2025-01-01T14:05:00Z"
+        );
     }
 
     // ── session display name tests ──
